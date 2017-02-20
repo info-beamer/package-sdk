@@ -81,7 +81,7 @@ ib.setDefaultStyle = function() {
 
 ib.ready = {
   then: function(cb) {
-    console.log("[HOSTED.JS] ready(...)");
+    console.log("[MOCK HOSTED.JS] ready(...)");
     cb(ib.config)
   }
 }
