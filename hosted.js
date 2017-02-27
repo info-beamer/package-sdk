@@ -65,6 +65,8 @@ if (window.MOCK_ASSETS == undefined)
   console.error("[MOCK HOSTED.JS] window.MOCK_ASSETS undefined");
 if (window.MOCK_NODE_ASSETS == undefined)
   console.error("[MOCK HOSTED.JS] window.MOCK_NODE_ASSETS undefined");
+if (window.MOCK_DEVICES == undefined)
+  console.error("[MOCK HOSTED.JS] window.MOCK_DEVICES undefined");
 if (window.MOCK_CONFIG == undefined)
   console.error("[MOCK HOSTED.JS] window.MOCK_CONFIG undefined");
 
@@ -72,6 +74,7 @@ var ib = {
   assets: window.MOCK_ASSETS,
   node_assets: window.MOCK_NODE_ASSETS,
   config: window.MOCK_CONFIG,
+  devices: window.MOCK_DEVICES,
   doc_link_base: '#mocked-doc-link',
 }
 
