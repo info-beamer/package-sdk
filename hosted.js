@@ -75,7 +75,7 @@ var ib = {
   node_assets: window.MOCK_NODE_ASSETS,
   config: window.MOCK_CONFIG,
   devices: window.MOCK_DEVICES,
-  doc_link_base: '#mocked-doc-link',
+  doc_link_base: 'data:text/plain,This would have opened the package documentation for ',
 }
 
 ib.setDefaultStyle = function() {
