@@ -77,6 +77,10 @@ def integer(value):
     return value
 
 @type
+def float(value):
+    return value
+
+@type
 def font(value):
     return value
 
