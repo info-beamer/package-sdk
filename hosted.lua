@@ -146,6 +146,12 @@ local resource_types = {
 }
 
 local types = {
+    ["date"] = function(value)
+        return value
+    end;
+    ["json"] = function(value)
+        return value
+    end;
     ["text"] = function(value)
         return value
     end;

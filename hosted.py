@@ -100,6 +100,10 @@ def json(value):
 def custom(value):
     return value
 
+@type
+def date(value):
+    return value
+
 def log(msg):
     print >>sys.stderr, "[hosted.py] %s" % msg
 
