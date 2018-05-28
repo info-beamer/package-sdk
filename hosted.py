@@ -171,6 +171,10 @@ class Configuration(object):
         log("updated config")
         self._parsed = parsed
 
+    @property
+    def raw(self):
+        return self._config
+
     def __getitem__(self, key):
         return self._parsed[key]
 
