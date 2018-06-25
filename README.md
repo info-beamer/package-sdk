@@ -23,8 +23,8 @@ connected screen on/off or reboot the device:
 device.turn_screen_off()
 ```
 
-You can access all configuration made by the user
-in the `CONFIG` object like this:
+You can access all configuration for the current node made
+by the user in the `config` object like this:
 
 ```python
 print(config['timezone'])
@@ -52,7 +52,9 @@ Stay tuned.
 ```python
 print(api.list()) # gets list of APIs
 
-# call 'weather' API for a location
+# call 'weather' API for a location. Behaves like a `requests`
+# get request, except the url is set automatically. It returns
+# a dict with the API response.
 print(api.weather.get(params={'lat': 50, 'lon': 9}))
 ```
 
