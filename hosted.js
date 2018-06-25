@@ -76,6 +76,23 @@ var ib = {
   config: window.MOCK_CONFIG,
   devices: window.MOCK_DEVICES,
   doc_link_base: 'data:text/plain,This would have opened the package documentation for ',
+  apis: {
+    geo: {
+      get: function(params) {
+        if (!params.q) {
+          console.error("no q parameter for weather query");
+        }
+        return new Promise(function(resolve, reject) {
+          setTimeout(function() { // simulate latency
+            resolve({"hits":[
+              {"lat":49.00937,"lon":8.40444,"name":"Karlsruhe (Baden-W\u00fcrttemberg, Germany)"},
+              {"lat":48.09001,"lon":-100.62042,"name":"Karlsruhe (North Dakota, United States)"}
+            ]})
+          }, 800);
+        })
+      },
+    }
+  }
 }
 
 ib.setDefaultStyle = function() {
