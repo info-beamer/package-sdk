@@ -12,7 +12,7 @@ based service import some of the utility objects
 provided. Example:
 
 ```python
-from hosted import CONFIG, NODE, DEVICE
+from hosted import config, node, device, api
 ```
 
 There are more functions that you can call from your
@@ -20,25 +20,41 @@ service that allow you to, for example, turn the
 connected screen on/off or reboot the device:
 
 ```python
-DEVICE.turn_screen_off()
+device.turn_screen_off()
 ```
 
 You can access all configuration made by the user
 in the `CONFIG` object like this:
 
 ```python
-print(CONFIG['timezone'])
+print(config['timezone'])
+
+# or
+
+print(config.timezone)
 ```
 
 You can automatically restart your service by calling
 
 ```python
-CONFIG.restart_on_update()
+config.restart_on_update()
 ```
 
 once. If the system detects that the configuration
 file changed, your service will be terminated and
 restarted so it can use the new settings.
+
+Additionally there are certain info-beamer provided
+APIs that you can call. The APIs are experimental
+right now and more will be added in the future.
+Stay tuned.
+
+```python
+print(api.list()) # gets list of APIs
+
+# call 'weather' API for a location
+print(api.weather.get(params={'lat': 50, 'lon': 9}))
+```
 
 ## hosted.lua
 
