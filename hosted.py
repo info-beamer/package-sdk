@@ -226,6 +226,22 @@ class Node(object):
     def send(self, data):
         self.send_raw(self._node + data)
 
+    def write_json(self, filename, data):
+        f = NamedTemporaryFile(prefix='hosted-py-tmp', dir=os.getcwd())
+        try:
+            f.write(json.dumps(
+                data,
+                ensure_ascii=False,
+                separators=(',',':'),
+            ).encode('utf8'))
+        except:
+            traceback.print_exc()
+            raise
+        else:
+            f.delete = False
+            f.close()
+            os.rename(f.name, filename)
+
     class Sender(object):
         def __init__(self, node, path):
             self._node = node
