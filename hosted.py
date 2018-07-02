@@ -248,7 +248,14 @@ class Node(object):
             self._path = path
 
         def __call__(self, data):
-            raw = "%s:%s" % (self._path, data)
+            if isinstance(data, (dict, list)):
+                raw = "%s:%s" % (self._path, json.dumps(
+                    data,
+                    ensure_ascii=False,
+                    separators=(',',':'),
+                ).encode('utf8'))
+            else:
+                raw = "%s:%s" % (self._path, data)
             self._node.send_raw(raw)
 
     def __getitem__(self, path):
