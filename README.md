@@ -5,7 +5,7 @@ you develop info-beamer hosted packages.
 
 ## dev-mode
 
-[dev-mode/](dev-mode) is a rapid development helper tool
+[dev-mode](dev-mode) is a rapid development helper tool
 that allows you to instantly sync a package that you're
 developing to an info-beamer device.
 
