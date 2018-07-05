@@ -1,0 +1,337 @@
+#!/usr/bin/python
+#
+# Part of info-beamer hosted. You can find the latest version
+# of this file at:
+# 
+# https://github.com/info-beamer/package-sdk/dev-mode
+#
+# Copyright (c) 2018 Florian Wesch <fw@info-beamer.com>
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are
+# met:
+#
+#     Redistributions of source code must retain the above copyright
+#     notice, this list of conditions and the following disclaimer.
+#
+#     Redistributions in binary form must reproduce the above copyright
+#     notice, this list of conditions and the following disclaimer in the
+#     documentation and/or other materials provided with the
+#     distribution.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
+# IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO,
+# THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR
+# CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL,
+# EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
+# PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+# PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+# LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+# NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+# SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+from __future__ import print_function
+import os
+import time
+import gzip
+import sys
+import stat
+import hashlib
+import fnmatch
+import requests
+import threading
+import textwrap
+
+DEVMODE_VERSION = 1
+DEVMODE_PORT = 3333 # for both client and server, so don't change it and expect it to work
+
+def fatal(msg):
+    print("\nERROR: %s" % ("\n".join(textwrap.wrap(msg, width=80))))
+    sys.exit(1)
+
+def log(msg):
+    print("[dev-mode] %s" % (msg,))
+
+try:
+    from cStringIO import StringIO as MemoryIO
+except ImportError:
+    from io import BytesIO as MemoryIO
+
+try:
+    from BaseHTTPServer import BaseHTTPRequestHandler, HTTPServer
+except ImportError:
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+try:
+    import pyinotify
+except ImportError:
+    fatal("needs pyinotify installed. On Ubuntu/Debian you should be able to install the package with:\napt install python-pyinotify")
+
+class SyncError(Exception):
+    pass
+
+class Contents(object):
+    def __init__(self):
+        self._files = {}
+        self._last_change = 0
+        self._last_sync = 0
+        self._lock = threading.RLock()
+        self._ignorer = None
+
+    def set_ignore_test(self, ignorer):
+        self._ignorer = ignorer
+
+    def add_file(self, path):
+        if not os.path.isfile(path):
+            log("ignoring added path %s: not a file" % (path,))
+            return
+
+        basename, filename = os.path.split(path)
+        if filename.startswith("."):
+            log("ignoring file %s: starts with dot" % (path,))
+            return
+
+        if self._ignorer and self._ignorer(path):
+            return
+
+        try:
+            h, size = hashlib.md5(), 0
+            with open(path, "rb") as f:
+                while 1:
+                    chunk = f.read(16384)
+                    if not chunk:
+                        break
+                    h.update(chunk)
+                    size += len(chunk)
+            with self._lock:
+                self._files[path] = h.hexdigest(), size
+                self._last_change = time.time()
+            log("added file %s: %s %s" % (path, h.hexdigest(), size))
+        except Exception as err:
+            log("cannot add file %s: %s" % (path, err))
+
+    def del_file(self, path):
+        with self._lock:
+            if self._files.pop(path, None):
+                log("removed file %s" % (path,))
+                self._last_change = time.time()
+
+    def del_path(self, path):
+        self.del_file(path)
+        prefix = path + '/'
+        with self._lock:
+            for path, info in self._files.items():
+                if not path.startswith(prefix):
+                    continue
+                self.del_file(path)
+
+    def get_sync_file(self, my_ip):
+        out = MemoryIO()
+        gzipped = gzip.GzipFile(fileobj=out, mode="wb")
+        for path, (md5, size) in self._files.items():
+            gzipped.write(("sync %s %s %d http://%s:%d/%s\n" % (
+                path, md5, size, my_ip, DEVMODE_PORT, md5
+            )).encode("utf-8"))
+        gzipped.close()
+        return out.getvalue()
+
+    def get_path(self, query_md5):
+        # brute force, but whatever..
+        for path, (md5, size) in self._files.items():
+            if md5 == query_md5:
+                return path
+
+    def send_sync_file(self, my_ip, info_beamer_host):
+        try:
+            with self._lock:
+                self._last_sync = time.time()
+                sync_file = self.get_sync_file(my_ip)
+            r = requests.post(
+                url = "http://%s:%d/api/sync-file" % (info_beamer_host, DEVMODE_PORT),
+                timeout = 5,
+                data = dict(
+                    sync_file = sync_file,
+                )
+            )
+            r.raise_for_status()
+            resp = r.json()
+        except Exception as err:
+            raise SyncError(err)
+        if not resp['ok']:
+            raise SyncError("sync not successful")
+        log("=> device is now syncing")
+
+    def needs_sync(self, max_age):
+        now = time.time()
+        with self._lock:
+            return self._last_change > self._last_sync and \
+                   now > self._last_change + max_age
+
+contents = Contents()
+
+class EventHandler(pyinotify.ProcessEvent):
+    def path_from_event(self, event):
+        return os.path.relpath(event.pathname)
+
+    def process_IN_CLOSE_WRITE(self, event):
+        contents.add_file(self.path_from_event(event))
+
+    def process_IN_CREATE(self, event):
+        path = self.path_from_event(event)
+        probably_complete = False
+        try:
+            sb = os.lstat(path)
+            if stat.S_ISLNK(sb.st_mode):
+                probably_complete = True
+            sb = os.stat(path)
+            if sb.st_nlink > 1:
+                probably_complete = True
+        except:
+            raise
+        if probably_complete:
+            contents.add_file(path)
+
+    def process_IN_MOVED_TO(self, event):
+        contents.add_file(self.path_from_event(event))
+
+    def process_IN_MOVED_FROM(self, event):
+        contents.del_file(self.path_from_event(event))
+
+    def process_IN_DELETE(self, event):
+        contents.del_file(self.path_from_event(event))
+
+class DevModeHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        path = contents.get_path(self.path.lstrip("/"))
+        if not path:
+            return self.send_error(404, "Not found")
+
+        try:
+            f = open(path, "rb")
+        except IOError as err:
+            return self.send_error(404, "Not found")
+
+        self.send_response(200)
+        self.end_headers()
+        while 1:
+            chunk = f.read(16384)
+            if not chunk:
+                break
+            self.wfile.write(chunk)
+
+        f.close()
+
+def devmode_server():
+    server = HTTPServer(('0.0.0.0', DEVMODE_PORT), DevModeHandler)
+    server.serve_forever()
+
+def start_devmode_server():
+    thread = threading.Thread(target=devmode_server)
+    thread.daemon = True
+    thread.start()
+
+def fswatcher():
+    wm = pyinotify.WatchManager()  # Watch Manager
+    handler = EventHandler()
+    notifier = pyinotify.Notifier(wm, handler)
+    wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
+    notifier.loop()
+
+def start_fswatcher():
+    thread = threading.Thread(target=fswatcher)
+    thread.daemon = True
+    thread.start()
+
+def main():
+    if len(sys.argv) != 3:
+        fatal("command usage: %s <info-beamer-device-ip> <root-path>" % sys.argv[0])
+
+    info_beamer_host, root_path = sys.argv[1], sys.argv[2]
+
+    os.chdir(root_path)
+
+    log("trying to contact info-beamer device @ %s" % (info_beamer_host,))
+    try:
+        r = requests.get(
+            url = "http://%s:%d/api/hello" % (info_beamer_host, DEVMODE_PORT),
+            allow_redirects = False,
+            timeout = 5
+        )
+        r.raise_for_status()
+        hello = r.json()
+    except Exception as err:
+        fatal("Cannot contact info-beamer device at %s. Make sure that devmode is "
+              "activated (see https://info-beamer.com/lnk/dev-mode) and that you "
+              "specified the correct device IP. You can find the device IP on its "
+              "on its details page on the dashboard." % (info_beamer_host,))
+
+    if not hello['ok']:
+        fatal("unexpected response from %s" % (info_beamer_host,))
+
+    if hello['version'] != DEVMODE_VERSION:
+        fatal("remote info-beamer device is running a different devmode version %d. "
+              "We only speak %d. Consider upgrading at https://github.com/info-beamer/tools" % (hello['version'], DEVMODE_VERSION))
+
+    my_ip = hello['your_ip']
+    log("device is ready for dev mode. device detail page is:\n\n\t%s\n" % (hello['device_url'],))
+
+    if os.path.exists(".gitignore"):
+        try:
+            import pathspec
+            with open('.gitignore', 'r') as f:
+                spec = pathspec.PathSpec.from_lines('gitwildmatch', f)
+            contents.set_ignore_test(spec.match_file)
+        except ImportError:
+            log("warning: consider install 'pathspec' module for precise .gitignore matching")
+            with open(".gitignore", "r") as f:
+                ignores = []
+                for line in f:
+                    line = line.strip()
+                    if line.endswith("/"):
+                        line += "*"
+                    ignores.append(line)
+            def test_ignore(path):
+                for ignore in ignores:
+                    if fnmatch.fnmatch(path, ignore):
+                        return True
+                return False
+            contents.set_ignore_test(test_ignore)
+
+    for root, dirs, files in os.walk('.'):
+        for fname in files:
+            path = os.path.normpath(os.path.join(root, fname))
+            if os.path.isfile(path):
+                contents.add_file(path)
+        for dir in dirs:
+            if dir.startswith("."):
+                dirs.remove(dir)
+
+    start_devmode_server()
+    start_fswatcher()
+
+    try:
+        while 1:
+            # I'm too lazy to make this not poll based.
+            if contents.needs_sync(max_age=0.25):
+                try:
+                    contents.send_sync_file(my_ip, info_beamer_host)
+                except SyncError as err:
+                    log("cannot sync: %s" % (err, ))
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        print()
+        log("restoring assigned device setup")
+        try:
+            requests.post(
+                url = "http://%s:%d/api/restore" % (info_beamer_host, DEVMODE_PORT),
+                timeout = 1
+            )
+        except:
+            pass
+    except:
+        raise
+
+if __name__ == "__main__":
+    main()

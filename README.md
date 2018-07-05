@@ -3,6 +3,12 @@
 In this repository you'll find useful files that help
 you develop info-beamer hosted packages.
 
+## dev-mode
+
+[dev-mode/](dev-mode) is a rapid development helper tool
+that allows you to instantly sync a package that you're
+developing to an info-beamer device.
+
 ## hosted.py
 
 [hosted.py](hosted.py) can be used as part of an
