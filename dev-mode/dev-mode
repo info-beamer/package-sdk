@@ -130,7 +130,7 @@ class Contents(object):
     def get_sync_file(self, my_ip):
         out = MemoryIO()
         gzipped = gzip.GzipFile(fileobj=out, mode="wb")
-        for path, (md5, size) in self._files.items():
+        for path, (md5, size) in sorted(self._files.items()):
             gzipped.write(("sync %s %s %d http://%s:%d/%s\n" % (
                 path, md5, size, my_ip, DEVMODE_PORT, md5
             )).encode("utf-8"))
