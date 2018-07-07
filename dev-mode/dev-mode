@@ -223,23 +223,21 @@ class DevModeHandler(BaseHTTPRequestHandler):
 
         f.close()
 
-def devmode_server():
-    server = HTTPServer(('0.0.0.0', DEVMODE_PORT), DevModeHandler)
-    server.serve_forever()
-
 def start_devmode_server():
+    def devmode_server():
+        server = HTTPServer(('0.0.0.0', DEVMODE_PORT), DevModeHandler)
+        server.serve_forever()
     thread = threading.Thread(target=devmode_server)
     thread.daemon = True
     thread.start()
 
-def fswatcher():
-    wm = pyinotify.WatchManager()  # Watch Manager
-    handler = EventHandler()
-    notifier = pyinotify.Notifier(wm, handler)
-    wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
-    notifier.loop()
-
 def start_fswatcher():
+    def fswatcher():
+        wm = pyinotify.WatchManager()
+        handler = EventHandler()
+        notifier = pyinotify.Notifier(wm, handler)
+        wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
+        notifier.loop()
     thread = threading.Thread(target=fswatcher)
     thread.daemon = True
     thread.start()
