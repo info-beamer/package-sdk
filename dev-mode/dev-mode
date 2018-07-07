@@ -93,7 +93,7 @@ class Contents(object):
             log("ignoring file %s: starts with dot" % (path,))
             return
 
-        if self._ignorer and self._ignorer(path):
+        if filename != "config.json" and self._ignorer and self._ignorer(path):
             return
 
         try:
