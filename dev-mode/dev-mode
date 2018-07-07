@@ -189,7 +189,7 @@ class EventHandler(pyinotify.ProcessEvent):
             if sb.st_nlink > 1:
                 probably_complete = True
         except:
-            raise
+            pass
         if probably_complete:
             contents.add_file(path)
 
