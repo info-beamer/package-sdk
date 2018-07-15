@@ -226,6 +226,14 @@ class Node(object):
     def send(self, data):
         self.send_raw(self._node + data)
 
+    @property
+    def is_top_level(self):
+        return self._node == "root"
+
+    @property
+    def path(self):
+        return self._node
+
     def write_json(self, filename, data):
         f = NamedTemporaryFile(prefix='hosted-py-tmp', dir=os.getcwd())
         try:
