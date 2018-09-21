@@ -234,21 +234,25 @@ class Node(object):
     def path(self):
         return self._node
 
-    def write_json(self, filename, data):
-        f = NamedTemporaryFile(prefix='hosted-py-tmp', dir=os.getcwd())
+    def write_file(self, filename, content):
+        f = NamedTemporaryFile(prefix='.hosted-py-tmp', dir=os.getcwd())
         try:
-            f.write(json.dumps(
-                data,
-                ensure_ascii=False,
-                separators=(',',':'),
-            ).encode('utf8'))
+            f.write(content)
         except:
             traceback.print_exc()
+            f.close()
             raise
         else:
             f.delete = False
             f.close()
             os.rename(f.name, filename)
+
+    def write_json(self, filename, data):
+        self.write_file(json.dumps(
+            data,
+            ensure_ascii=False,
+            separators=(',',':'),
+        ).encode('utf8'))
 
     class Sender(object):
         def __init__(self, node, path):
