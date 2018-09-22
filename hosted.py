@@ -437,8 +437,7 @@ class GPIOMonitor(object):
 
     def poll_forever(self):
         while 1:
-            events = self.poll()
-            for event in events:
+            for event in self.poll():
                 yield event
 
     def on(self, pin):
