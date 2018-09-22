@@ -38,6 +38,7 @@ import sys
 import json
 import socket
 import time
+import select
 import pyinotify
 import thread
 import threading
@@ -397,10 +398,61 @@ class APIs(object):
     def __getattr__(self, api_name):
         return APIProxy(self, api_name)
 
+class GPIOMonitor(object):
+    def __init__(self):
+        self._pin_fd = {}
+        self._state = {}
+        self._fd_2_pin = {}
+        self._poll = select.poll()
+        self._lock = threading.Lock()
+
+    def monitor(self, pin):
+        if pin not in self._pin_fd:
+            if not os.path.exists("/sys/class/gpio/gpio%d" % pin):
+                with open("/sys/class/gpio/export", "wb") as f:
+                    f.write(pin)
+            with open("/sys/class/gpio/gpio%d/direction" % pin, "wb") as f:
+                f.write("in")
+            with open("/sys/class/gpio/gpio%d/active_low" % pin, "wb") as f:
+                f.write("0")
+            with open("/sys/class/gpio/gpio%d/edge" % pin, "wb") as f:
+                f.write("both")
+            fd = os.open("/sys/class/gpio/gpio%d/value" % pin, os.O_RDONLY)
+            self._state[pin] = bool(int(os.read(fd, 5)))
+            self._fd_2_pin[fd] = pin
+            self._pin_fd[pin] = fd
+            self._poll.register(fd, select.POLLPRI | select.POLLERR)
+
+    def poll(self, timeout=1000):
+        changes = []
+        for fd, evt in self._poll.poll():
+            os.lseek(fd, 0, 0)
+            state = bool(int(os.read(fd, 5)))
+            pin = self._fd_2_pin[fd]
+            with self._lock:
+                prev_state, self._state[pin] = self._state[pin], state
+            if state != prev_state:
+                changes.append((pin, state))
+        return changes
+
+    def poll_forever(self):
+        while 1:
+            events = self.poll()
+            for event in events:
+                yield event
+
+    def on(self, pin):
+        with self._lock:
+            return self._state.get(pin, False)
 
 class Device(object):
     def __init__(self):
         self._socket = None
+        self._gpio = GPIOMonitor()
+
+    @property
+    def gpio(self):
+        return self._gpio
 
     def ensure_connected(self):
         if self._socket:
