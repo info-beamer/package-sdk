@@ -425,7 +425,7 @@ class GPIOMonitor(object):
 
     def poll(self, timeout=1000):
         changes = []
-        for fd, evt in self._poll.poll():
+        for fd, evt in self._poll.poll(timeout):
             os.lseek(fd, 0, 0)
             state = bool(int(os.read(fd, 5)))
             pin = self._fd_2_pin[fd]
