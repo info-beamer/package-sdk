@@ -31,13 +31,14 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-VERSION = "1.1"
+VERSION = "1.2"
 
 import os
 import sys
 import json
-import socket
 import time
+import errno
+import socket
 import select
 import pyinotify
 import thread
@@ -406,15 +407,26 @@ class GPIOMonitor(object):
         self._poll = select.poll()
         self._lock = threading.Lock()
 
-    def monitor(self, pin):
+    def monitor(self, pin, invert=False):
         if pin not in self._pin_fd:
             if not os.path.exists("/sys/class/gpio/gpio%d" % pin):
                 with open("/sys/class/gpio/export", "wb") as f:
-                    f.write(pin)
+                    f.write(str(pin))
+            # mdev is giving the newly create GPIO directory correct permissions.
+            for i in range(10):
+                try:
+                    with open("/sys/class/gpio/gpio%d/active_low" % pin, "wb") as f:
+                        f.write("1" if invert else "0")
+                    break
+                except IOError as err:
+                    if err.errno != errno.EACCES:
+                        raise
+                time.sleep(0.1)
+                log("waiting for GPIO permissions")
+            else:
+                raise IOError(errno.EACCES, "Cannot access GPIO")
             with open("/sys/class/gpio/gpio%d/direction" % pin, "wb") as f:
                 f.write("in")
-            with open("/sys/class/gpio/gpio%d/active_low" % pin, "wb") as f:
-                f.write("0")
             with open("/sys/class/gpio/gpio%d/edge" % pin, "wb") as f:
                 f.write("both")
             fd = os.open("/sys/class/gpio/gpio%d/value" % pin, os.O_RDONLY)
