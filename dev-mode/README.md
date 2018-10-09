@@ -39,6 +39,11 @@ the python-pyinotify and python3-pathspec packages.
 If you have any kind of firewall active you must allow incoming
 connections to TCP port 3333 to your development box.
 
+If installing on Mac OSX please be sure to use python3 and install the python watchdog module. `pip install watchdog` should be enough.
+Also if you have problems, use a virtual env with python3 to run `dev-mode` or 
+specify the full path to the interpreter on the command line
+`/usr/local/bin/python3 dev-mode`.
+
 ## Syncing your first package
 
 If you're working on an info-beamer package you should have all
