@@ -64,10 +64,18 @@ try:
 except ImportError:
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-try:
-    import pyinotify
-except ImportError:
-    fatal("needs pyinotify installed. On Ubuntu/Debian you should be able to install the package with:\napt install python-pyinotify")
+if sys.platform == "darwin":
+    try:
+        from watchdog.observers import Observer
+        from watchdog.events import FileSystemEventHandler
+    except ImportError:
+        fatal("needs watchdog installed.\n\t`pip install watchdog` should  suffice")
+else:
+    try:
+        import pyinotify
+    except ImportError:
+        fatal("needs pyinotify installed. On Ubuntu/Debian you should be able to install the package with:\napt install python-pyinotify")
+
 
 class SyncError(Exception):
     pass
@@ -169,38 +177,68 @@ class Contents(object):
             return self._last_change > self._last_sync and \
                    now > self._last_change + max_age
 
+
 contents = Contents()
 
-class EventHandler(pyinotify.ProcessEvent):
-    def path_from_event(self, event):
-        return os.path.relpath(event.pathname)
+if sys.platform == 'darwin':
+    class EventHandler(FileSystemEventHandler):
 
-    def process_IN_CLOSE_WRITE(self, event):
-        contents.add_file(self.path_from_event(event))
+        def path_from_event(self, event):
+            return os.path.relpath(event.src_path)
 
-    def process_IN_CREATE(self, event):
-        path = self.path_from_event(event)
-        probably_complete = False
-        try:
-            sb = os.lstat(path)
-            if stat.S_ISLNK(sb.st_mode):
-                probably_complete = True
-            sb = os.stat(path)
-            if sb.st_nlink > 1:
-                probably_complete = True
-        except:
-            pass
-        if probably_complete:
+        def on_modified(self, event):
+            log("Mod Event {}".format(str(event)))
+            contents.add_file(self.path_from_event(event))
+
+        def on_created(self, event):
+            log("Create Event {}".format(str(event)))
+            path = self.path_from_event(event)
+            # on macOSX the tests on ISLINK and NLINK were always false. And a modify of a file
+            # resulted on: delete event of file, create event of file, and mod event of directory!!
             contents.add_file(path)
 
-    def process_IN_MOVED_TO(self, event):
-        contents.add_file(self.path_from_event(event))
+        # def process_IN_MOVED_TO(self, event):
+        #     contents.add_file(self.path_from_event(event))
 
-    def process_IN_MOVED_FROM(self, event):
-        contents.del_file(self.path_from_event(event))
+        def on_moved(self, event):
+            log("Move Event {}".format(str(event)))
+            contents.del_file(os.path.relpath(event.src_path))
+            contents.add_file(os.path.relpath(event.dest_path))
 
-    def process_IN_DELETE(self, event):
-        contents.del_file(self.path_from_event(event))
+        def on_deleted(self, event):
+            log("Del Event {}".format(str(event)))
+            contents.del_file(self.path_from_event(event))
+else:
+    class EventHandler(pyinotify.ProcessEvent):
+        def path_from_event(self, event):
+            return os.path.relpath(event.pathname)
+
+        def process_IN_CLOSE_WRITE(self, event):
+            contents.add_file(self.path_from_event(event))
+
+        def process_IN_CREATE(self, event):
+            path = self.path_from_event(event)
+            probably_complete = False
+            try:
+                sb = os.lstat(path)
+                if stat.S_ISLNK(sb.st_mode):
+                    probably_complete = True
+                sb = os.stat(path)
+                if sb.st_nlink > 1:
+                    probably_complete = True
+            except:
+                pass
+            if probably_complete:
+                contents.add_file(path)
+
+        def process_IN_MOVED_TO(self, event):
+            contents.add_file(self.path_from_event(event))
+
+        def process_IN_MOVED_FROM(self, event):
+            contents.del_file(self.path_from_event(event))
+
+        def process_IN_DELETE(self, event):
+            contents.del_file(self.path_from_event(event))
 
 class DevModeHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -233,11 +271,18 @@ def start_devmode_server():
 
 def start_fswatcher():
     def fswatcher():
-        wm = pyinotify.WatchManager()
-        handler = EventHandler()
-        notifier = pyinotify.Notifier(wm, handler)
-        wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
-        notifier.loop()
+        if sys.platform == "darwin":
+            handler = EventHandler()
+            observer = Observer()
+            observer.schedule(handler, '.', recursive=True)
+            observer.start()
+        else:
+            wm = pyinotify.WatchManager()
+            handler = EventHandler()
+            notifier = pyinotify.Notifier(wm, handler)
+            wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
+            notifier.loop()
+
     thread = threading.Thread(target=fswatcher)
     thread.daemon = True
     thread.start()
