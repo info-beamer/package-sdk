@@ -126,15 +126,6 @@ class Contents(object):
                 log("removed file %s" % (path,))
                 self._last_change = time.time()
 
-    def del_path(self, path):
-        self.del_file(path)
-        prefix = path + '/'
-        with self._lock:
-            for path, info in self._files.items():
-                if not path.startswith(prefix):
-                    continue
-                self.del_file(path)
-
     def get_sync_file(self, my_ip):
         out = MemoryIO()
         gzipped = gzip.GzipFile(fileobj=out, mode="wb")
@@ -182,7 +173,6 @@ contents = Contents()
 
 if sys.platform == 'darwin':
     class EventHandler(FileSystemEventHandler):
-
         def path_from_event(self, event):
             return os.path.relpath(event.src_path)
 
@@ -196,9 +186,6 @@ if sys.platform == 'darwin':
             # on macOSX the tests on ISLINK and NLINK were always false. And a modify of a file
             # resulted on: delete event of file, create event of file, and mod event of directory!!
             contents.add_file(path)
-
-        # def process_IN_MOVED_TO(self, event):
-        #     contents.add_file(self.path_from_event(event))
 
         def on_moved(self, event):
             log("Move Event {}".format(str(event)))
@@ -308,7 +295,7 @@ def main():
         fatal("Cannot contact info-beamer device at %s. Make sure that devmode is "
               "activated (see https://info-beamer.com/lnk/dev-mode) and that you "
               "specified the correct device IP. You can find the device IP on its "
-              "on its details page on the dashboard." % (info_beamer_host,))
+              "details page on the dashboard." % (info_beamer_host,))
 
     if not hello['ok']:
         fatal("unexpected response from %s" % (info_beamer_host,))
