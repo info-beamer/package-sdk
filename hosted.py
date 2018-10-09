@@ -473,6 +473,11 @@ class Device(object):
     def gpio(self):
         return self._gpio
 
+    @property
+    def screen_resolution(self):
+        with open("/sys/class/graphics/fb0/virtual_size", "rb") as f:
+            return [int(val) for val in f.read().strip().split(',')]
+
     def ensure_connected(self):
         if self._socket:
             return True
