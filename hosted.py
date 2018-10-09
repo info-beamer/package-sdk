@@ -399,7 +399,7 @@ class APIs(object):
     def __getattr__(self, api_name):
         return APIProxy(self, api_name)
 
-class GPIOMonitor(object):
+class GPIO(object):
     def __init__(self):
         self._pin_fd = {}
         self._state = {}
@@ -407,33 +407,41 @@ class GPIOMonitor(object):
         self._poll = select.poll()
         self._lock = threading.Lock()
 
+    def setup_pin(self, pin, direction="in", invert=False):
+        if not os.path.exists("/sys/class/gpio/gpio%d" % pin):
+            with open("/sys/class/gpio/export", "wb") as f:
+                f.write(str(pin))
+        # mdev is giving the newly create GPIO directory correct permissions.
+        for i in range(10):
+            try:
+                with open("/sys/class/gpio/gpio%d/active_low" % pin, "wb") as f:
+                    f.write("1" if invert else "0")
+                break
+            except IOError as err:
+                if err.errno != errno.EACCES:
+                    raise
+            time.sleep(0.1)
+            log("waiting for GPIO permissions")
+        else:
+            raise IOError(errno.EACCES, "Cannot access GPIO")
+        with open("/sys/class/gpio/gpio%d/direction" % pin, "wb") as f:
+            f.write(direction)
+
+    def set_pin_value(self, pin, high):
+        with open("/sys/class/gpio/gpio%d/value" % pin, "wb") as f:
+            f.write("1" if high else "0")
+
     def monitor(self, pin, invert=False):
-        if pin not in self._pin_fd:
-            if not os.path.exists("/sys/class/gpio/gpio%d" % pin):
-                with open("/sys/class/gpio/export", "wb") as f:
-                    f.write(str(pin))
-            # mdev is giving the newly create GPIO directory correct permissions.
-            for i in range(10):
-                try:
-                    with open("/sys/class/gpio/gpio%d/active_low" % pin, "wb") as f:
-                        f.write("1" if invert else "0")
-                    break
-                except IOError as err:
-                    if err.errno != errno.EACCES:
-                        raise
-                time.sleep(0.1)
-                log("waiting for GPIO permissions")
-            else:
-                raise IOError(errno.EACCES, "Cannot access GPIO")
-            with open("/sys/class/gpio/gpio%d/direction" % pin, "wb") as f:
-                f.write("in")
-            with open("/sys/class/gpio/gpio%d/edge" % pin, "wb") as f:
-                f.write("both")
-            fd = os.open("/sys/class/gpio/gpio%d/value" % pin, os.O_RDONLY)
-            self._state[pin] = bool(int(os.read(fd, 5)))
-            self._fd_2_pin[fd] = pin
-            self._pin_fd[pin] = fd
-            self._poll.register(fd, select.POLLPRI | select.POLLERR)
+        if pin in self._pin_fd:
+            return
+        self.setup_pin(pin, direction="in", invert=invert)
+        with open("/sys/class/gpio/gpio%d/edge" % pin, "wb") as f:
+            f.write("both")
+        fd = os.open("/sys/class/gpio/gpio%d/value" % pin, os.O_RDONLY)
+        self._state[pin] = bool(int(os.read(fd, 5)))
+        self._fd_2_pin[fd] = pin
+        self._pin_fd[pin] = fd
+        self._poll.register(fd, select.POLLPRI | select.POLLERR)
 
     def poll(self, timeout=1000):
         changes = []
@@ -459,7 +467,7 @@ class GPIOMonitor(object):
 class Device(object):
     def __init__(self):
         self._socket = None
-        self._gpio = GPIOMonitor()
+        self._gpio = GPIO()
 
     @property
     def gpio(self):
