@@ -9,13 +9,8 @@ your choice. That way you avoid the slower `git pull` approach
 and instantly see the effect of changes you make.
 
 You can rapidly build new packages or tweak existing packages
-that way: Just edit their node.lua file or image and they get
+that way: Just edit their node.lua file or assets and they get
 instantly synced to the device.
-
-As you can't use the info-beamer dashboard to configure your
-package you'll have to provide your own `config.json` file while
-developing. This might be a bit tricky to get used to as usually
-info-beamer hosted generates those files for you.
 
 ## Installation on Linux
 
@@ -77,10 +72,17 @@ $ dev-mode 192.168.1.101 /path/to/package
 ```
 
 where `192.168.1.101` must be replace by the IP of the device you
-prepared in the above step. `dev-mode` will contact your info-beamer
-device and instruct it to fetch the package files from your dev
-machine, just like it usually fetches them from the info-beamer
-hosted file storage system.
+prepared in the above step. On OSX or Windows you might have to
+explicitly run the tool using Python3 like this instead:
+
+```
+c:\> python3 /path/to/dev-mode 192.168.1.101 /path/to/package
+```
+
+`dev-mode` will contact your info-beamer device and instruct it
+to fetch the package files from your dev machine, just like
+it usually fetches them from the info-beamer hosted file
+storage servers.
 
 If you don't have a package ready, you can use the included
 minimal example in `example/`. Start `dev-mode` like this:
