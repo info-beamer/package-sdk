@@ -17,6 +17,40 @@ package you'll have to provide your own `config.json` file while
 developing. This might be a bit tricky to get used to as usually
 info-beamer hosted generates those files for you.
 
+## Installation on Linux
+
+You'll have to install the python-pyinotify and python3-pathspec
+packages. On Ubuntu/Debian they should be available out-of-the-box:
+
+```
+apt install python-pyinotify python3-pathspec
+```
+
+## Installation on MacOS
+
+If installing on Mac OSX please be sure to use python3 and
+install the python watchdog module. `pip install watchdog`
+should be enough. Also if you have problems, use a virtual
+env with python3 to run `dev-mode` or specify the full path
+to the interpreter on the command line `/usr/local/bin/python3 dev-mode`.
+
+## Installation on Windows
+
+You need to install Python3 from here: https://www.python.org/downloads/windows/
+When installing, be sure to select the option to include python/pip in your
+`%PATH%`. After that, start `cmd.exe` as Administrator and
+run `pip install watchdog`. This will install the watchdog module
+that is used to monitor file changes.
+
+## Setting up your development machine
+
+Fetch the `dev-mode` Python tool from this repository. It should work
+with python2 or python3 out of the box if you followed the instruction for
+your operating system above.
+
+If you have any kind of firewall active you must allow incoming
+connections to TCP port 3333 to your development box.
+
 ## Preparing your info-beamer device
 
 The first thing you'll have to do is enable the rapid development
@@ -29,20 +63,6 @@ or for production devices: developer mode allows unauthenticated
 access to your device and anyone with network access to the
 device can upload any content to it. This might result in a complete
 device takeover.
-
-## Preparing your development machine
-
-Fetch the `dev-mode` Python tool from this repository. It should work
-with python2 or python3 out of the box. You'll have to install
-the python-pyinotify and python3-pathspec packages.
-
-If you have any kind of firewall active you must allow incoming
-connections to TCP port 3333 to your development box.
-
-If installing on Mac OSX please be sure to use python3 and install the python watchdog module. `pip install watchdog` should be enough.
-Also if you have problems, use a virtual env with python3 to run `dev-mode` or 
-specify the full path to the interpreter on the command line
-`/usr/local/bin/python3 dev-mode`.
 
 ## Syncing your first package
 

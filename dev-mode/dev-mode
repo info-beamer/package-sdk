@@ -48,7 +48,7 @@ DEVMODE_VERSION = 1
 DEVMODE_PORT = 3333 # for both client and server, so don't change it and expect it to work
 
 def fatal(msg):
-    print("\nERROR: %s" % ("\n".join(textwrap.wrap(msg, width=80))))
+    print("ERROR: %s" % ("\r\n".join(textwrap.wrap(msg, width=80))))
     sys.exit(1)
 
 def log(msg):
@@ -64,18 +64,23 @@ try:
 except ImportError:
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-if sys.platform == "darwin":
-    try:
-        from watchdog.observers import Observer
-        from watchdog.events import FileSystemEventHandler
-    except ImportError:
-        fatal("needs watchdog installed.\n\t`pip install watchdog` should  suffice")
-else:
+observer = None
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    observer = 'watchdog'
+except ImportError:
     try:
         import pyinotify
+        observer = 'pyinotify'
     except ImportError:
-        fatal("needs pyinotify installed. On Ubuntu/Debian you should be able to install the package with:\napt install python-pyinotify")
+        pass
 
+if observer is None:
+    fatal("dev-mode needs a way to monitor file system changes. "
+          "You need either 'watchdog' or 'pyinotify' installed. "
+          "On Ubuntu/Debian, try `apt install python-inotify` or `apt install python3-watchdog`. "
+          "On Windows/OSX, try `pip install watchdog`.")
 
 class SyncError(Exception):
     pass
@@ -168,32 +173,27 @@ class Contents(object):
             return self._last_change > self._last_sync and \
                    now > self._last_change + max_age
 
-
 contents = Contents()
 
-if sys.platform == 'darwin':
+if observer == 'watchdog':
     class EventHandler(FileSystemEventHandler):
         def path_from_event(self, event):
             return os.path.relpath(event.src_path)
 
         def on_modified(self, event):
-            log("Mod Event {}".format(str(event)))
             contents.add_file(self.path_from_event(event))
 
         def on_created(self, event):
-            log("Create Event {}".format(str(event)))
             path = self.path_from_event(event)
             # on macOSX the tests on ISLINK and NLINK were always false. And a modify of a file
             # resulted on: delete event of file, create event of file, and mod event of directory!!
             contents.add_file(path)
 
         def on_moved(self, event):
-            log("Move Event {}".format(str(event)))
             contents.del_file(os.path.relpath(event.src_path))
             contents.add_file(os.path.relpath(event.dest_path))
 
         def on_deleted(self, event):
-            log("Del Event {}".format(str(event)))
             contents.del_file(self.path_from_event(event))
 else:
     class EventHandler(pyinotify.ProcessEvent):
@@ -258,11 +258,11 @@ def start_devmode_server():
 
 def start_fswatcher():
     def fswatcher():
-        if sys.platform == "darwin":
+        if observer == 'watchdog':
             handler = EventHandler()
-            observer = Observer()
-            observer.schedule(handler, '.', recursive=True)
-            observer.start()
+            obs = Observer()
+            obs.schedule(handler, '.', recursive=True)
+            obs.start()
         else:
             wm = pyinotify.WatchManager()
             handler = EventHandler()
@@ -277,6 +277,7 @@ def start_fswatcher():
 def main():
     if len(sys.argv) != 3:
         fatal("command usage: %s <info-beamer-device-ip> <root-path>" % sys.argv[0])
+    log("using '%s' filesystem observer" % (observer,))
 
     info_beamer_host, root_path = sys.argv[1], sys.argv[2]
 
