@@ -40,7 +40,7 @@ You need to install Python3 from here: https://www.python.org/downloads/windows/
 When installing, be sure to select the option to include python/pip in your
 `%PATH%`. After that, start `cmd.exe` as Administrator and
 run `pip install watchdog`. This will install the watchdog module
-that is used to monitor file changes.
+used to monitor file changes.
 
 ## Setting up your development machine
 
@@ -49,7 +49,9 @@ with python2 or python3 out of the box if you followed the instruction for
 your operating system above.
 
 If you have any kind of firewall active you must allow incoming
-connections to TCP port 3333 to your development box.
+connections to TCP port 3333 to your development box. This is especially
+true on Windows where the firewall blocks incoming connections by
+default. When the firewall dialog opens, be sure to allow Python3.
 
 ## Preparing your info-beamer device
 
