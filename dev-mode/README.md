@@ -31,10 +31,11 @@ to the interpreter on the command line `/usr/local/bin/python3 dev-mode`.
 
 ## Installation on Windows
 
-You need to install Python3 from here: https://www.python.org/downloads/windows/
+You need to install Python3 from [python.org](https://www.python.org/downloads/windows/).
 When installing, be sure to select the option to include python/pip in your
-`%PATH%`. After that, start `cmd.exe` as Administrator and
-run `pip install watchdog`. This will install the watchdog module
+`%PATH%`. After that, start `cmd.exe` as Administrator (enter `cmd.exe`
+in the start menu, right click on "Command Prompt" and select "Run as administrator")
+and run `pip install watchdog`. This will install the watchdog module
 used to monitor file changes.
 
 ## Setting up your development machine
