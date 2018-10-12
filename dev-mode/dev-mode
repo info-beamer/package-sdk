@@ -1,4 +1,4 @@
-#!/usr/bin/python3
+#!/usr/bin/env python3
 #
 # Part of info-beamer hosted. You can find the latest version
 # of this file at:
@@ -90,6 +90,11 @@ class Contents(object):
         if not os.path.isfile(path):
             log("ignoring added path %s: not a file" % (path,))
             return
+
+        if path.startswith('.git'):
+           # files in .git don't start with ., so the 
+           # next guard won't work.
+           return
 
         basename, filename = os.path.split(path)
         if filename.startswith("."):
