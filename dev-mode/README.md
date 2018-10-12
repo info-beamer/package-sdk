@@ -14,11 +14,11 @@ instantly synced to the device.
 
 ## Installation on Linux
 
-You'll have to install the python-pyinotify and python3-pathspec
+You'll have to install the python3-watchdog and python3-pathspec
 packages. On Ubuntu/Debian they should be available out-of-the-box:
 
 ```
-apt install python-pyinotify python3-pathspec
+apt install python3-watchdog python3-pathspec
 ```
 
 ## Installation on MacOS

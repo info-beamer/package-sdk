@@ -37,7 +37,6 @@ import os
 import time
 import gzip
 import sys
-import stat
 import hashlib
 import fnmatch
 import requests
@@ -64,22 +63,13 @@ try:
 except ImportError:
     from http.server import BaseHTTPRequestHandler, HTTPServer
 
-observer = None
 try:
     from watchdog.observers import Observer
     from watchdog.events import FileSystemEventHandler
-    observer = 'watchdog'
 except ImportError:
-    try:
-        import pyinotify
-        observer = 'pyinotify'
-    except ImportError:
-        pass
-
-if observer is None:
     fatal("dev-mode needs a way to monitor file system changes. "
-          "You need either 'watchdog' or 'pyinotify' installed. "
-          "On Ubuntu/Debian, try `apt install python-inotify` or `apt install python3-watchdog`. "
+          "You need to install the 'watchdog' module. "
+          "On Ubuntu/Debian, try `apt install python3-watchdog`. "
           "On Windows/OSX, try `pip install watchdog`.")
 
 class SyncError(Exception):
@@ -175,57 +165,22 @@ class Contents(object):
 
 contents = Contents()
 
-if observer == 'watchdog':
-    class EventHandler(FileSystemEventHandler):
-        def path_from_event(self, event):
-            return os.path.relpath(event.src_path)
+class EventHandler(FileSystemEventHandler):
+    def path_from_event(self, event):
+        return os.path.relpath(event.src_path)
 
-        def on_modified(self, event):
-            contents.add_file(self.path_from_event(event))
+    def on_modified(self, event):
+        contents.add_file(self.path_from_event(event))
 
-        def on_created(self, event):
-            path = self.path_from_event(event)
-            # on macOSX the tests on ISLINK and NLINK were always false. And a modify of a file
-            # resulted on: delete event of file, create event of file, and mod event of directory!!
-            contents.add_file(path)
+    def on_created(self, event):
+        contents.add_file(self.path_from_event(event))
 
-        def on_moved(self, event):
-            contents.del_file(os.path.relpath(event.src_path))
-            contents.add_file(os.path.relpath(event.dest_path))
+    def on_moved(self, event):
+        contents.del_file(os.path.relpath(event.src_path))
+        contents.add_file(os.path.relpath(event.dest_path))
 
-        def on_deleted(self, event):
-            contents.del_file(self.path_from_event(event))
-else:
-    class EventHandler(pyinotify.ProcessEvent):
-        def path_from_event(self, event):
-            return os.path.relpath(event.pathname)
-
-        def process_IN_CLOSE_WRITE(self, event):
-            contents.add_file(self.path_from_event(event))
-
-        def process_IN_CREATE(self, event):
-            path = self.path_from_event(event)
-            probably_complete = False
-            try:
-                sb = os.lstat(path)
-                if stat.S_ISLNK(sb.st_mode):
-                    probably_complete = True
-                sb = os.stat(path)
-                if sb.st_nlink > 1:
-                    probably_complete = True
-            except:
-                pass
-            if probably_complete:
-                contents.add_file(path)
-
-        def process_IN_MOVED_TO(self, event):
-            contents.add_file(self.path_from_event(event))
-
-        def process_IN_MOVED_FROM(self, event):
-            contents.del_file(self.path_from_event(event))
-
-        def process_IN_DELETE(self, event):
-            contents.del_file(self.path_from_event(event))
+    def on_deleted(self, event):
+        contents.del_file(self.path_from_event(event))
 
 class DevModeHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -258,18 +213,10 @@ def start_devmode_server():
 
 def start_fswatcher():
     def fswatcher():
-        if observer == 'watchdog':
-            handler = EventHandler()
-            obs = Observer()
-            obs.schedule(handler, '.', recursive=True)
-            obs.start()
-        else:
-            wm = pyinotify.WatchManager()
-            handler = EventHandler()
-            notifier = pyinotify.Notifier(wm, handler)
-            wm.add_watch('.', pyinotify.ALL_EVENTS, rec=True, auto_add=True)
-            notifier.loop()
-
+        handler = EventHandler()
+        obs = Observer()
+        obs.schedule(handler, '.', recursive=True)
+        obs.start()
     thread = threading.Thread(target=fswatcher)
     thread.daemon = True
     thread.start()
@@ -277,7 +224,6 @@ def start_fswatcher():
 def main():
     if len(sys.argv) != 3:
         fatal("command usage: %s <info-beamer-device-ip> <root-path>" % sys.argv[0])
-    log("using '%s' filesystem observer" % (observer,))
 
     info_beamer_host, root_path = sys.argv[1], sys.argv[2]
 
