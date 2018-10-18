@@ -516,7 +516,10 @@ class Device(object):
             self.turn_screen_off()
 
     def reboot(self):
-        self.send_raw("reboot")
+        self.send_raw("system reboot")
+
+    def halt_until_powercycled(self):
+        self.send_raw("system halt")
 
     def restart_infobeamer(self):
         self.send_raw("infobeamer restart")
