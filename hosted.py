@@ -250,7 +250,7 @@ class Node(object):
             os.rename(f.name, filename)
 
     def write_json(self, filename, data):
-        self.write_file(json.dumps(
+        self.write_file(filename, json.dumps(
             data,
             ensure_ascii=False,
             separators=(',',':'),
