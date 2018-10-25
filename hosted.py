@@ -147,7 +147,7 @@ class Configuration(object):
 
     def parse_node_json(self, do_update=True):
         with open("node.json") as f:
-            self._options = json.load(f)['options']
+            self._options = json.load(f).get('options', [])
         if do_update:
             self.update_config()
 
