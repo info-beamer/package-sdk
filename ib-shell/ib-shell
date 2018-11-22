@@ -1,0 +1,82 @@
+#!/usr/bin/python
+import os, sys, requests, subprocess, json, threading, tty, termios, select
+import websocket # needs apt-get install python-websocket on ubuntu
+
+class ConnectionError(Exception):
+    pass
+
+def connect(api_key, device_id):
+    r = requests.post(
+        url = 'https://info-beamer.com/api/v1/device/%d/session' % device_id,
+        auth = ('', api_key),
+    )
+    r.raise_for_status()
+    print("got endpoint")
+    endpoint = r.json()['endpoint']
+    ws = websocket.create_connection(
+        url = endpoint,
+        timeout = 10,
+    )
+
+    def recv():
+        type, data = ws.recv_data()
+        if type != websocket.ABNF.OPCODE_TEXT:
+            raise ConnectionError("unexpected packet")
+        return json.loads(data)
+
+    def send(**pkt):
+        ws.send(json.dumps(pkt))
+
+    print("waiting for device")
+    pkt = recv()
+    if pkt['event'] != 'connected':
+        raise ConnectionError("didn't get connection")
+
+    size = subprocess.check_output(['stty', 'size'])
+    rows, cols = [int(v) for v in size.strip().split()]
+    send(event='setup', rows=rows, cols=cols)
+
+    forwarding = True
+
+    def forward_stdin():
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
+        tty.setraw(sys.stdin)
+        stdin = os.fdopen(fd, 'rb', 0)
+        while forwarding:
+            s = select.select([stdin], [], [], 500)[0]
+            if not s:
+                continue
+            inp = stdin.read(1)
+            if not inp:
+                break
+            send(event='stdin', data=inp)
+            if inp == '\x04':
+                break
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    stdin_sender = threading.Thread(target=forward_stdin)
+    stdin_sender.start()
+
+    while 1:
+        try:
+            pkt = recv()
+        except:
+            break
+        if pkt['event'] == 'data':
+            sys.stdout.write(pkt['data'])
+            sys.stdout.flush()
+        elif pkt['event'] == 'eof':
+            break
+    forwarding = False
+    stdin_sender.join()
+    print("session exited")
+
+if __name__ == "__main__":
+    if len(sys.argv) != 2:
+        print("ib-shell <device_id>")
+        sys.exit(1)
+    api_key = os.getenv('API_KEY')
+    if api_key is None:
+        print("Please set the API_KEY environment variable to your API key. You can get it from https://info-beamer.com/account")
+        sys.exit(1)
+    connect(api_key, int(sys.argv[1]))
