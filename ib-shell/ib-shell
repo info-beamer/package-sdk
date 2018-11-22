@@ -1,5 +1,5 @@
 #!/usr/bin/python
-import os, sys, requests, subprocess, json, threading, tty, termios, select
+import os, sys, requests, subprocess, json, threading, tty, termios, select, time
 import websocket # needs apt-get install python-websocket on ubuntu
 
 class ConnectionError(Exception):
@@ -36,6 +36,7 @@ def connect(api_key, device_id):
     rows, cols = [int(v) for v in size.strip().split()]
     send(event='setup', rows=rows, cols=cols)
 
+    ws.settimeout(None)
     forwarding = True
 
     def forward_stdin():
@@ -43,9 +44,13 @@ def connect(api_key, device_id):
         old_settings = termios.tcgetattr(fd)
         tty.setraw(sys.stdin)
         stdin = os.fdopen(fd, 'rb', 0)
+        last_keep_alive = time.time()
         while forwarding:
-            s = select.select([stdin], [], [], 500)[0]
+            s = select.select([stdin], [], [], 0.5)[0]
             if not s:
+                if time.time() - last_keep_alive > 10:
+                    send(event='keepalive')
+                    last_keep_alive = time.time()
                 continue
             inp = stdin.read(1)
             if not inp:
