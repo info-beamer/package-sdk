@@ -1,20 +1,31 @@
 #!/usr/bin/python
-import os, sys, requests, subprocess, json, threading, tty, termios, select, time
+import os, sys, requests, subprocess, json, threading, tty, termios, select, time, argparse, textwrap
 import websocket # needs apt-get install python-websocket on ubuntu
 
 class ConnectionError(Exception):
     pass
 
-def connect(api_key, device_id):
+def connect(api_key, device_id, mode):
+    r = requests.get(
+        url = 'https://info-beamer.com/api/v1/device/%d' % device_id,
+        auth = ('', api_key),
+    )
+    device = r.json()
+    print("------------------------------")
+    print("Device %d (Serial %s)" % (device_id, device['serial']))
+    print(u"%s - %s" % (device['description'], device['location']))
+    print("------------------------------")
+
     r = requests.post(
         url = 'https://info-beamer.com/api/v1/device/%d/session' % device_id,
         auth = ('', api_key),
+        data = {'mode': mode},
     )
     r.raise_for_status()
-    print("got endpoint")
-    endpoint = r.json()['endpoint']
+    terminal = r.json()
+    print("connecting in %s mode" % (terminal['mode'],))
     ws = websocket.create_connection(
-        url = endpoint,
+        url = terminal['endpoint'],
         timeout = 10,
     )
 
@@ -48,7 +59,7 @@ def connect(api_key, device_id):
         while forwarding:
             s = select.select([stdin], [], [], 0.5)[0]
             if not s:
-                if time.time() - last_keep_alive > 10:
+                if time.time() - last_keep_alive > 30:
                     send(event='keepalive')
                     last_keep_alive = time.time()
                 continue
@@ -77,11 +88,19 @@ def connect(api_key, device_id):
     print("session exited")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("ib-shell <device_id>")
-        sys.exit(1)
+    parser = argparse.ArgumentParser(description=textwrap.dedent("""
+        Allows you terminal access to your info-beamer device.
+        You must set the API_KEY environment variable to your
+        info-beamer API key before invoking this tool. You can
+        find your key on https://info-beamer.com/account
+    """))
+    parser.add_argument("device_id", type=int, help='device ID to connect to')
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--root", dest='mode', action='store_const', const='root', help='request full root access')
+    group.add_argument("--viewer", dest='mode', action='store_const', const='viewer', help="request limited access (default)")
+    args = parser.parse_args()
     api_key = os.getenv('API_KEY')
     if api_key is None:
         print("Please set the API_KEY environment variable to your API key. You can get it from https://info-beamer.com/account")
         sys.exit(1)
-    connect(api_key, int(sys.argv[1]))
+    connect(api_key, args.device_id, args.mode or 'viewer')
