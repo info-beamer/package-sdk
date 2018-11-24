@@ -23,7 +23,7 @@ def connect(api_key, device_id, mode):
     )
     r.raise_for_status()
     terminal = r.json()
-    print("connecting in %s mode" % (terminal['mode'],))
+    print("Connecting in %s mode" % (terminal['mode'],))
     ws = websocket.create_connection(
         url = terminal['endpoint'],
         timeout = 10,
@@ -38,7 +38,7 @@ def connect(api_key, device_id, mode):
     def send(**pkt):
         ws.send(json.dumps(pkt))
 
-    print("waiting for device")
+    print("Waiting for device")
     pkt = recv()
     if pkt['event'] != 'connected':
         raise ConnectionError("didn't get connection")
@@ -85,7 +85,7 @@ def connect(api_key, device_id, mode):
             break
     forwarding = False
     stdin_sender.join()
-    print("session exited")
+    print("Session exited")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=textwrap.dedent("""
