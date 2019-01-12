@@ -31,7 +31,7 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-VERSION = "1.2"
+VERSION = "1.3"
 
 import os
 import sys
@@ -316,12 +316,17 @@ class APIProxy(object):
 
     def unwrap(self, r):
         r.raise_for_status()
-        resp = r.json()
-        if not resp['ok']:
-            raise APIError(u"api call failed: %s" % (
-                resp.get('error', '<unknown error>'),
-            ))
-        return resp.get(self._api_name)
+        if r.status_code == 304:
+            return None
+        if r.headers['content-type'] == 'application/json':
+            resp = r.json()
+            if not resp['ok']:
+                raise APIError(u"api call failed: %s" % (
+                    resp.get('error', '<unknown error>'),
+                ))
+            return resp.get(self._api_name)
+        else:
+            return r.content
 
     def add_defaults(self, kwargs):
         if not 'timeout' in kwargs:
