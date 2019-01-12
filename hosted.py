@@ -343,7 +343,7 @@ class APIProxy(object):
         self.add_defaults(kwargs)
         try:
             return self.unwrap(self._apis.session.post(
-                url = self.url(),
+                url = self.url,
                 **kwargs
             ))
         except APIError:
