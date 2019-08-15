@@ -1,6 +1,7 @@
 #!/usr/bin/python
-import os, sys, requests, subprocess, json, threading, tty, termios, select, time, argparse, textwrap
+import os, sys, subprocess, json, threading, tty, termios, select, time, argparse, textwrap
 import websocket # needs apt-get install python-websocket on ubuntu
+import requests # needs apt-get install python-requests on ubuntu
 
 class ConnectionError(Exception):
     pass

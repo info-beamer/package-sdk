@@ -3,7 +3,8 @@
 Like SSH, but without key management and the need to configure anything
 on your devices. And you can connect to them from anywhere.
 
-On Ubuntu you might have to install the package `python-websocket`.
+On Ubuntu you might have to install the package `python-websocket`
+and `python-requests`.
 
 Then just set the environment variable `API_KEY` to your 
 [info-beamer hosted API key](https://info-beamer.com/acount) and start
