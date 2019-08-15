@@ -7,7 +7,7 @@ On Ubuntu you might have to install the package `python-websocket`
 and `python-requests`.
 
 Then just set the environment variable `API_KEY` to your 
-[info-beamer hosted API key](https://info-beamer.com/acount) and start
+[info-beamer hosted API key](https://info-beamer.com/account) and start
 the `ib-shell` command like this:
 
 ```
