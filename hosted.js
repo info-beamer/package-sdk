@@ -31,9 +31,9 @@
  *  OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  *
  */
+(function() {
 
 var head = document.getElementsByTagName("head")[0];
-
 var asset_root = "https://cdn.infobeamer.com/s/mock-use-latest/";
 
 function setupResources(js, css) {
@@ -99,10 +99,14 @@ ib.setDefaultStyle = function() {
   setupResources([], ['reset.css', 'bootstrap.css'])
 }
 
-ib.ready = {
-  then: function(cb) {
-    console.log("[MOCK HOSTED.JS] ready(...)");
-    cb(ib.config)
+var asset_chooser_response = window.MOCK_ASSET_CHOOSER_RESPONSE
+if (asset_chooser_response) {
+  console.log("[MOCK HOSTED.JS] emulating asset chooser");
+  ib.assetChooser = function() {
+    console.log("[MOCK HOSTED.JS] asset chooser mockup returns", asset_chooser_response);
+    return new Promise(function(resolve) {
+      resolve(asset_chooser_response);
+    })
   }
 }
 
@@ -121,4 +125,14 @@ ib.getDocLink = function(name) {
   return ib.doc_link_base + name;
 }
 
-window.infobeamer = ib;
+ib.onAssetUpdate = function(cb) {
+  console.warn("[MOCK HOSTED.JS] onAssetUpdate is a no-op in the mock environment");
+}
+
+ib.ready = new Promise(function(resolve) {
+  console.log("[MOCK HOSTED.JS] ready");
+  resolve(ib.config);
+})
+
+window.infobeamer = window.ib = ib;
+})();
