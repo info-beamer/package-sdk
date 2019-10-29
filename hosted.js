@@ -6,7 +6,7 @@
  *
  *  BSD 2-Clause License
  *
- *  Copyright (c) 2017, Florian Wesch <fw@dividuum.de>
+ *  Copyright (c) 2017-2019 Florian Wesch <fw@info-beamer.com>
  *  All rights reserved.
  *
  *  Redistribution and use in source and binary forms, with or without
