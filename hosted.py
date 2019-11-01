@@ -115,8 +115,8 @@ def init_types():
 
 init_types()
 
-def log(msg):
-    print >>sys.stderr, "[hosted.py] %s" % msg
+def log(msg, name='hosted.py'):
+    print >>sys.stderr, "[{}] {}".format(name, msg)
 
 def abort_service(reason):
     log("restarting service (%s)" % reason)
