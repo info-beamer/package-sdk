@@ -483,6 +483,14 @@ class Device(object):
         with open("/sys/class/graphics/fb0/virtual_size", "rb") as f:
             return [int(val) for val in f.read().strip().split(',')]
 
+    @property
+    def screen_x(self):
+        return self.screen_resolution[0]
+
+    @property
+    def screen_y(self):
+        return self.screen_resolution[1]
+
     def ensure_connected(self):
         if self._socket:
             return True
