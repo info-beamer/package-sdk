@@ -1,7 +1,7 @@
 #
 # Part of info-beamer hosted. You can find the latest version
 # of this file at:
-# 
+#
 # https://github.com/info-beamer/package-sdk
 #
 # Copyright (c) 2014,2015,2016,2017,2018 Florian Wesch <fw@info-beamer.com>
@@ -31,7 +31,7 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-VERSION = "1.3"
+VERSION = "1.4"
 
 import os
 import sys
