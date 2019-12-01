@@ -484,11 +484,11 @@ class Device(object):
             return [int(val) for val in f.read().strip().split(',')]
 
     @property
-    def screen_x(self):
+    def screen_w(self):
         return self.screen_resolution[0]
 
     @property
-    def screen_y(self):
+    def screen_h(self):
         return self.screen_resolution[1]
 
     def ensure_connected(self):
