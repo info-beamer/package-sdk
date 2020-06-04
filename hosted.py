@@ -4,7 +4,7 @@
 #
 # https://github.com/info-beamer/package-sdk
 #
-# Copyright (c) 2014,2015,2016,2017,2018 Florian Wesch <fw@info-beamer.com>
+# Copyright (c) 2014-2020 Florian Wesch <fw@info-beamer.com>
 # All rights reserved.
 #
 # Redistribution and use in source and binary forms, with or without
@@ -31,9 +31,10 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-VERSION = "1.4"
+VERSION = "1.5"
 
 import os
+import re
 import sys
 import json
 import time
@@ -43,7 +44,9 @@ import select
 import pyinotify
 import thread
 import threading
+import traceback
 import requests
+from collections import namedtuple
 from tempfile import NamedTemporaryFile
 
 types = {}
@@ -132,6 +135,227 @@ def abort_service(reason):
     os.kill(os.getpid(), 9)
     time.sleep(100)
 
+class InfoBeamerQueryException(Exception):
+    pass
+
+class InfoBeamerQuery(object):
+    def __init__(self, host='127.0.0.1', port=4444):
+        self._sock = None
+        self._conn = None
+        self._host = host
+        self._port = port
+        self._timeout = 2
+        self._version = None
+
+    def _reconnect(self):
+        if self._conn is not None:
+            return
+        try:
+            self._sock = socket.create_connection((self._host, self._port), self._timeout)
+            self._conn = self._sock.makefile()
+            intro = self._conn.readline()
+        except socket.timeout:
+            self._reset()
+            raise InfoBeamerQueryException("Timeout while reopening connection")
+        except socket.error as err:
+            self._reset()
+            raise InfoBeamerQueryException("Cannot connect to %s:%s: %s" % (
+                self._host, self._port, err))
+        m = re.match("^Info Beamer PI ([^ ]+)", intro)
+        if not m:
+            self._reset()
+            raise InfoBeamerQueryException("Invalid handshake. Not info-beamer?")
+        self._version = m.group(1)
+
+    def _parse_line(self):
+        line = self._conn.readline()
+        if not line:
+            return None
+        return line.rstrip()
+
+    def _parse_multi_line(self):
+        lines = []
+        while 1:
+            line = self._conn.readline()
+            if not line:
+                return None
+            line = line.rstrip()
+            if not line:
+                break
+            lines.append(line)
+        return '\n'.join(lines)
+
+    def _send_cmd(self, min_version, cmd, multiline=False):
+        for retry in (1, 2):
+            self._reconnect()
+            if self._version <= min_version:
+                raise InfoBeamerQueryException(
+                    "This query is not implemented in your version of info-beamer. "
+                    "%s or higher required, %s found" % (min_version, self._version)
+                )
+            try:
+                self._conn.write(cmd + "\n")
+                self._conn.flush()
+                response = self._parse_multi_line() if multiline else self._parse_line()
+                if response is None:
+                    self._reset()
+                    continue
+                return response
+            except socket.error:
+                self._reset()
+                continue
+            except socket.timeout:
+                self._reset()
+                raise InfoBeamerQueryException("Timeout waiting for response")
+            except Exception:
+                self._reset()
+                continue
+        raise InfoBeamerQueryException("Failed to get a response")
+
+    def _reset(self, close=True):
+        if close:
+            try:
+                if self._conn: self._conn.close()
+                if self._sock: self._sock.close()
+            except:
+                pass
+        self._conn = None
+        self._sock = None
+
+    @property
+    def addr(self):
+        return "%s:%s" % (self._host, self._port)
+
+    def close(self):
+        self._reset()
+
+    @property
+    def ping(self):
+        "tests if info-beamer is reachable"
+        return self._send_cmd(
+            "0.6", "*query/*ping",
+        ) == "pong"
+
+    @property
+    def uptime(self):
+        "returns the uptime in seconds"
+        return int(self._send_cmd(
+            "0.6", "*query/*uptime",
+        ))
+
+    @property
+    def objects(self):
+        "returns the number of allocated info-beamer objects"
+        return int(self._send_cmd(
+            "0.9.4", "*query/*objects",
+        ))
+
+    @property
+    def version(self):
+        "returns the running info-beamer version"
+        return self._send_cmd(
+            "0.6", "*query/*version",
+        )
+
+    @property
+    def fps(self):
+        "returns the FPS of the top level node"
+        return float(self._send_cmd(
+            "0.6", "*query/*fps",
+        ))
+
+    @property
+    def display(self):
+        "returns the display configuration"
+        return json.loads(self._send_cmd(
+            "1.0", "*query/*display",
+        ))
+
+    ResourceUsage = namedtuple("ResourceUsage", "user_time system_time memory")
+    @property
+    def resources(self):
+        "returns information about used resources"
+        return self.ResourceUsage._make(int(v) for v in self._send_cmd(
+            "0.6", "*query/*resources",
+        ).split(','))
+
+    ScreenSize = namedtuple("ScreenSize", "width height")
+    @property
+    def screen(self):
+        "returns the native screen size"
+        return self.ScreenSize._make(int(v) for v in self._send_cmd(
+            "0.8.1", "*query/*screen",
+        ).split(','))
+
+    @property
+    def runid(self):
+        "returns a unique run id that changes with every restart of info-beamer"
+        return self._send_cmd(
+            "0.9.0", "*query/*runid",
+        )
+
+    @property
+    def nodes(self):
+        "returns a list of nodes"
+        nodes = self._send_cmd(
+            "0.9.3", "*query/*nodes",
+        ).split(',')
+        return [] if not nodes[0] else nodes
+
+    class Node(object):
+        def __init__(self, ib, path):
+            self._ib = ib
+            self._path = path
+
+        @property
+        def mem(self):
+            "returns the Lua memory usage of this node"
+            return int(self._ib._send_cmd(
+                "0.6", "*query/*mem/%s" % self._path
+            ))
+
+        @property
+        def fps(self):
+            "returns the framerate of this node"
+            return float(self._ib._send_cmd(
+                "0.6", "*query/*fps/%s" % self._path
+            ))
+
+        def io(self, raw=True):
+            "creates a tcp connection to this node"
+            status = self._ib._send_cmd(
+                "0.6", "%s%s" % ("*raw/" if raw else '', self._path),
+            )
+            if status != 'ok!':
+                raise InfoBeamerQueryException("Cannot connect to node %s" % self._path)
+            sock = self._ib._sock
+            sock.settimeout(None)
+            return self._ib._conn
+
+        @property
+        def has_error(self):
+            "queries the error flag"
+            return bool(int(self._ib._send_cmd(
+                "0.8.2", "*query/*has_error/%s" % self._path,
+            )))
+
+        @property
+        def error(self):
+            "returns the last Lua traceback"
+            return self._ib._send_cmd(
+                "0.8.2", "*query/*error/%s" % self._path, multiline=True
+            )
+
+        def __repr__(self):
+            return "%s/%s" % (self._ib, self._path)
+
+    def node(self, node):
+        return self.Node(self, node)
+
+    def __repr__(self):
+        return "<info-beamer@%s>" % self.addr
+
+
 class Configuration(object):
     def __init__(self):
         self._restart = False
@@ -216,6 +440,91 @@ def setup_inotify(configuration):
 
     wm.add_watch('.', pyinotify.IN_MOVED_TO)
 
+class RPC(object):
+    def __init__(self, path, callbacks):
+        self._path = path
+        self._callbacks = callbacks
+        self._lock = threading.Lock()
+        self._con = None
+        thread = threading.Thread(target=self._listen_thread)
+        thread.daemon = True
+        thread.start()
+
+    def _get_connection(self):
+        if self._con is None:
+            try:
+                self._con = InfoBeamerQuery().node(
+                    self._path + "/rpc/python"
+                ).io(raw=True)
+            except InfoBeamerQueryException:
+                return None
+        return self._con
+
+    def _close_connection(self):
+        with self._lock:
+            if self._con:
+                try:
+                    self._con.close()
+                except:
+                    pass
+            self._con = None
+
+    def _send(self, line):
+        with self._lock:
+            con = self._get_connection()
+        if con is None:
+            return
+        try:
+            con.write(line + '\n')
+            con.flush()
+            return True
+        except:
+            self._close_connection()
+            return False
+
+    def _recv(self):
+        with self._lock:
+            con = self._get_connection()
+        try:
+            return con.readline()
+        except:
+            self._close_connection()
+
+    def _listen_thread(self):
+        while 1:
+            line = self._recv()
+            if not line:
+                self._close_connection()
+                time.sleep(0.5)
+                continue
+            try:
+                args = json.loads(line)
+                method = args.pop(0)
+                callback = self._callbacks.get(method)
+                if callback:
+                    callback(*args)
+                else:
+                    log("callback '%s' not found" % (method,))
+            except:
+                traceback.print_exc()
+
+    def register(self, name, fn):
+        self._callbacks[name] = fn
+
+    def call(self, fn):
+        self.register(fn.__name__, fn)
+
+    def __getattr__(self, method):
+        def call(*args):
+            args = list(args)
+            args.insert(0, method)
+            return self._send(json.dumps(
+                args,
+                ensure_ascii=False,
+                separators=(',',':'),
+            ).encode('utf8'))
+        return call
+
 class Node(object):
     def __init__(self, node):
         self._node = node
@@ -277,6 +586,13 @@ class Node(object):
 
     def __call__(self, data):
         return self.Sender(self, self._node)(data)
+
+    def connect(self, suffix=""):
+        ib = InfoBeamerQuery()
+        return ib.node(self.path + suffix).io(raw=True)
+
+    def rpc(self, **callbacks):
+        return RPC(self.path, callbacks)
 
     def scratch_cached(self, filename, generator):
         cached = os.path.join(os.environ['SCRATCH'], filename)
@@ -356,7 +672,7 @@ class APIProxy(object):
         except Exception as err:
             raise APIError(err)
 
-class APIs(object):
+class OnDeviceAPIs(object):
     def __init__(self, config):
         self._config = config
         self._index = None
@@ -469,6 +785,26 @@ class GPIO(object):
         with self._lock:
             return self._state.get(pin, False)
 
+class SyncerAPI(object):
+    def __init__(self):
+        self._session = requests.Session()
+
+    def unwrap(self, r):
+        r.raise_for_status()
+        return r.json()
+
+    def get(self, path, params={}):
+        return self.unwrap(self._session.get(
+            'http://127.0.0.1:81%s' % path,
+            params=params, timeout=10
+        ))
+
+    def post(self, path, data={}):
+        return self.unwrap(self._session.post(
+            'http://127.0.0.1:81%s' % path,
+            data=data, timeout=10
+        ))
+
 class Device(object):
     def __init__(self):
         self._socket = None
@@ -540,6 +876,10 @@ class Device(object):
     def verify_cache(self):
         self.send_raw("syncer verify_cache")
 
+    @property
+    def syncer_api(self):
+        return SyncerAPI()
+
 if __name__ == "__main__":
     device = Device()
     while 1:
@@ -549,13 +889,12 @@ if __name__ == "__main__":
         except (KeyboardInterrupt, EOFError):
             break
         except:
-            import traceback
             traceback.print_exc()
 else:
     log("starting version %s" % (VERSION,))
     node = NODE = Node(os.environ['NODE'])
     device = DEVICE = Device()
     config = CONFIG = Configuration()
-    api = API = APIs(CONFIG)
+    api = API = OnDeviceAPIs(CONFIG)
     setup_inotify(CONFIG)
     log("ready to go!")
