@@ -31,21 +31,12 @@
 # NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-VERSION = "1.5"
+VERSION = "1.6"
 
-import os
-import re
-import sys
-import json
-import time
-import errno
-import socket
-import select
-import pyinotify
-import thread
-import threading
-import traceback
-import requests
+import os, re, sys, json, time, traceback, marshal, hashlib
+import errno, socket, select, thread, threading
+import pyinotify, requests
+from functools import wraps
 from collections import namedtuple
 from tempfile import NamedTemporaryFile
 
@@ -525,6 +516,105 @@ class RPC(object):
             ).encode('utf8'))
         return call
 
+class Cache(object):
+    def __init__(self, scope='default'):
+        self._touched = set()
+        self._prefix = 'cache-%s-' % scope
+
+    def key_to_fname(self, key):
+        return self._prefix + hashlib.md5(key).hexdigest()
+
+    def has(self, key, max_age=None):
+        try:
+            stat = os.stat(self.key_to_fname(key))
+            if max_age is not None:
+                now = time.time()
+                if now > stat.st_mtime + max_age:
+                    return False
+            return True
+        except:
+            return False
+
+    def get(self, key, max_age=None):
+        try:
+            with open(self.file_ref(key)) as f:
+                if max_age is not None:
+                    stat = os.fstat(f.fileno())
+                    now = time.time()
+                    if now > stat.st_mtime + max_age:
+                        return None
+                return f.read()
+        except:
+            return None
+
+    def get_json(self, key, max_age=None):
+        data = self.get(key, max_age)
+        if data is None:
+            return None
+        return json.loads(data)
+
+    def set(self, key, value):
+        with open(self.file_ref(key), "wb") as f:
+            f.write(value)
+
+    def set_json(self, key, data):
+        self.set(key, json.dumps(data))
+
+    def file_ref(self, key):
+        fname = self.key_to_fname(key)
+        self._touched.add(fname)
+        return fname
+
+    def start(self):
+        self._touched = set()
+
+    def prune(self):
+        existing = set()
+        for fname in os.listdir("."):
+            if not fname.startswith(self._prefix):
+                continue
+            existing.add(fname)
+        prunable = existing - self._touched
+        for fname in prunable:
+            try:
+                log("pruning %s" % fname)
+                os.unlink(fname)
+            except:
+                pass
+
+    def clear(self):
+        self.start()
+        self.prune()
+
+    def call(self, max_age=None):
+        def deco(fn):
+            @wraps(fn)
+            def wrapper(*args, **kwargs):
+                key = marshal.dumps((fn.__name__, args, kwargs), 2)
+                cached = self.get(key, max_age)
+                if cached is not None:
+                    return marshal.loads(cached)
+                val = fn(*args, **kwargs)
+                self.set(key, marshal.dumps(val, 2))
+                return val
+            return wrapper
+        return deco
+
+    def file_producer(self, max_age=None):
+        def deco(fn):
+            @wraps(fn)
+            def wrapper(*args, **kwargs):
+                key = marshal.dumps((fn.__name__, args, kwargs), 2)
+                if self.has(key, max_age):
+                    return self.file_ref(key)
+                val = fn(*args, **kwargs)
+                if val is None:
+                    return None
+                self.set(key, val)
+                return self.file_ref(key)
+            return wrapper
+        return deco
+
 class Node(object):
     def __init__(self, node):
         self._node = node
@@ -593,6 +683,9 @@ class Node(object):
 
     def rpc(self, **callbacks):
         return RPC(self.path, callbacks)
+
+    def cache(self, scope='default'):
+        return Cache(scope)
 
     def scratch_cached(self, filename, generator):
         cached = os.path.join(os.environ['SCRATCH'], filename)
@@ -813,6 +906,10 @@ class Device(object):
     @property
     def gpio(self):
         return self._gpio
+
+    @property
+    def serial(self):
+        return os.environ['SERIAL']
 
     @property
     def screen_resolution(self):
