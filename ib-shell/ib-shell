@@ -1,5 +1,14 @@
 #!/usr/bin/python
 import os, sys, subprocess, json, threading, tty, termios, select, time, argparse, textwrap
+from binascii import hexlify
+try:
+    from urllib.parse import urlencode
+except ImportError:
+    from urllib import urlencode
+try:
+    input = raw_input
+except NameError:
+    pass
 import websocket # needs apt-get install python-websocket on ubuntu
 import requests # needs apt-get install python-requests on ubuntu
 
@@ -11,7 +20,14 @@ def connect(api_key, device_id, mode):
         url = 'https://info-beamer.com/api/v1/device/%d' % device_id,
         auth = ('', api_key),
     )
-    device = r.json()
+    if r.status_code != 200:
+        print(r.reason)
+        return
+    try:
+        device = r.json()
+    except:
+        print(r.content)
+        return
     print("------------------------------")
     print("Device %d (Serial %s)" % (device_id, device['serial']))
     print(u"%s - %s" % (device['description'], device['location']))
@@ -67,7 +83,7 @@ def connect(api_key, device_id, mode):
             inp = stdin.read(1)
             if not inp:
                 break
-            send(event='stdin', data=inp)
+            send(event='stdin', data=inp.decode('utf8', 'ignore'))
             if inp == '\x04':
                 break
         termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
@@ -88,12 +104,91 @@ def connect(api_key, device_id, mode):
     stdin_sender.join()
     print("Session exited")
 
+class OAuth(object):
+    def __init__(self, client_id, scope, state_file,
+        authorize_url="https://info-beamer.com/oauth/authorize",
+        token_url="https://info-beamer.com/oauth/token",
+    ):
+        self._client_id = client_id
+        self._authorize_url = authorize_url
+        self._token_url = token_url
+        self._scope = scope
+        self._state_file = state_file
+        self.load_refresh_token()
+
+    def load_refresh_token(self):
+        try:
+            with open(self._state_file) as f:
+                self._refresh_token = f.read().strip()
+        except:
+            self._refresh_token = None
+
+    def save_refresh_token(self):
+        with open(self._state_file, "wb") as f:
+            f.write(self._refresh_token.encode('utf8'))
+
+    def wipe_refresh_token(self):
+        try:
+            os.unlink(self._state_file)
+        except:
+            pass
+
+    def oauth_flow(self):
+        import webbrowser, base64, hashlib
+        code_verifier = hexlify(os.urandom(16))
+        code_challenge = base64.urlsafe_b64encode(hashlib.sha256(code_verifier).digest()).strip(b"=")
+        redirect_target = "%s?%s" % (self._authorize_url, urlencode(dict(
+            response_type = 'code',
+            client_id = self._client_id,
+            state = hexlify(os.urandom(16)), # not used in oob
+            scope = self._scope,
+            redirect_uri = 'oob',
+            code_challenge = code_challenge,
+            code_challenge_method = 'S256',
+        )))
+        if input("Open a browser to start the OAuth authorization? [Y/n] > ") not in ("y", ""):
+            raise Exception("OAuth declined")
+        print("Opening browser for %s\n" % (redirect_target,))
+        webbrowser.open(redirect_target)
+        code = input("Using the opened browser, grant access to ib-shell, then paste the auth code here: > ").strip()
+        r = requests.post(self._token_url, data=dict(
+            grant_type = 'authorization_code',
+            code = code,
+            redirect_uri = 'oob',
+            client_id = self._client_id,
+            code_verifier = code_verifier,
+        ))
+        if r.status_code == 403:
+            raise Exception("Auth code invalid. Please try again")
+        r.raise_for_status()
+        auth = r.json()
+        self._refresh_token = auth['refresh_token']
+        self.save_refresh_token()
+        print("Using api key from authorization flow")
+        return auth['access_token']
+
+    def fetch_access_token(self):
+        if not self._refresh_token:
+            return self.oauth_flow()
+        r = requests.post(self._token_url, data=dict(
+            grant_type = 'refresh_token',
+            refresh_token = self._refresh_token,
+        ))
+        if r.status_code == 403:
+            self.wipe_refresh_token()
+            raise Exception("Refresh token invalid. Please restart ib-shell to reauthorize")
+        r.raise_for_status()
+        auth = r.json()
+        print("Using api key from refresh token request")
+        return auth['access_token']
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=textwrap.dedent("""
         Allows you terminal access to your info-beamer device.
-        You must set the API_KEY environment variable to your
-        info-beamer API key before invoking this tool. You can
-        find your key on https://info-beamer.com/account
+        Uses the OAuth2 flow to request access to your account.
+        Alternatively you can set the environment variable
+        API_KEY if you want to use a fixed API_KEY. You can find
+        your API keys on https://info-beamer.com/account
     """))
     parser.add_argument("device_id", type=int, help='device ID to connect to')
     group = parser.add_mutually_exclusive_group()
@@ -101,7 +196,18 @@ if __name__ == "__main__":
     group.add_argument("--viewer", dest='mode', action='store_const', const='viewer', help="request limited access (default)")
     args = parser.parse_args()
     api_key = os.getenv('API_KEY')
-    if api_key is None:
-        print("Please set the API_KEY environment variable to your API key. You can get it from https://info-beamer.com/account")
-        sys.exit(1)
+    if api_key is not None:
+        print("Using api key from API_KEY environment variable")
+    else:
+        try:
+            oauth = OAuth(
+                client_id = "b63449b7c0987c6b29767cde73a4e79b",
+                scope = 'device:read device:remote',
+                state_file = os.path.join(os.path.expanduser("~"), ".ib-shell.token"),
+            )
+            api_key = oauth.fetch_access_token()
+        except Exception as err:
+            print("Cannot fetch access token: %s" % (err,))
+            sys.exit(1)
+
     connect(api_key, args.device_id, args.mode or 'viewer')
