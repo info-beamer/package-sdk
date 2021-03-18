@@ -110,7 +110,8 @@ def init_types():
 init_types()
 
 def log(msg, name='hosted.py'):
-    print >>sys.stderr, "[{}] {}".format(name, msg)
+    sys.stderr.write('[{}] {}\n'.format(name, msg))
+    sys.stderr.flush()
 
 def abort_service(reason):
     log("restarting service (%s)" % reason)
