@@ -34,7 +34,7 @@
 VERSION = "1.6"
 
 import os, re, sys, json, time, traceback, marshal, hashlib
-import errno, socket, select, thread, threading
+import errno, socket, select, threading
 import pyinotify, requests
 from functools import wraps
 from collections import namedtuple
