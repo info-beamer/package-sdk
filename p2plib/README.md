@@ -17,7 +17,7 @@ same setup. Examples might be:
 
 A single device within the group of devices running the same setup is automatically promoted to leader. All
 other devices become followers. The leader can broadcast short (recommended size ~1KB) messages to all
-follower devices. Similarly any device can send a message to the current leader devices. The library can
+follower devices. Similarly any device can send a message to the current leader device. The library can
 also be used if only a single device is active: All messages are then locally delivery within the same program.
 This allows you to use the same code regardless of the number of active devices.
 
@@ -90,7 +90,7 @@ The `promote_leader` will again be called on the selected device.
 
 Should the previous offline leader return, the current leader will
 be demoted and its `demote_leader` callback will be called. In the
-example this shut down the thread.
+example this shuts down the thread.
 
 Similarly a device can also send messages to the current leader
 using `send_to_leader`. On the leader, such messages will
@@ -129,7 +129,7 @@ within all callbacks or by an external caller.
 ## Constructor `PeerGroup(port=None)`
 
 Sets up a new peer group. The optional port argument can be provided
-for force the use of a specific UDP port for communication. Usually
+to force the use of a specific UDP port for communication. Usually
 this is not recommended as an automatic port is selected based
 on the current node directory.
 
@@ -145,7 +145,7 @@ all devices.
 
 ## Callback `group.promote_leader(self, peer_info)`
 
-Called on the currently selected leader. Set up required data structures
+Called on a newly selected leader. Set up required data structures
 needed to fulfil the leader role. This can include starting new background
 threads. `peer_info` provides information about the leader.
 
@@ -188,7 +188,7 @@ metadata about the current leader. See below.
 
 Called on the leader device if any of the other peers calls
 `send_to_leader`. `msg` is the sent data and `peer_info` provides
-information about the current leader.
+information about the sender of the message.
 
 ## Property `group.is_follower`
 
@@ -200,7 +200,7 @@ True if the device is the selected leader.
 
 ## Property `group.num_peers`
 
-Returns the total number of devices (including the one calling)
+Returns the total number of devices (including this one)
 within the PeerGroup.
 
 ## Property `group.peers`

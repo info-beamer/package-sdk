@@ -248,6 +248,8 @@ class PeerGroup(object):
         self._leader = None
         self._peers, self._peers_lock = {}, threading.Lock()
 
+        self.setup_peer()
+
         thread = threading.Thread(target=self._update_thread)
         thread.daemon = True
         thread.start()
@@ -255,8 +257,6 @@ class PeerGroup(object):
         thread = threading.Thread(target=self._listen_thread)
         thread.daemon = True
         thread.start()
-
-        self.setup_peer()
 
     ##----- Methods to overwrite ------
 
