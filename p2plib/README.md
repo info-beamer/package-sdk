@@ -178,13 +178,13 @@ an eventual call to `promote_follower` or `promote_leader`.
 Called if a peer is no longer available. This callback is called
 after a peer is demoted.
 
-## Callback `group.on_leader_message(msg, peer_info)`
+## Callback `group.on_leader_message(self, msg, peer_info)`
 
 Called on a device if a message from the current leader is received.
 `msg` is the data sent by `broadcast_to_all`. `peer_info` is some
 metadata about the current leader. See below.
 
-## Callback `group.on_peer_message(msg, peer_info)`
+## Callback `group.on_peer_message(self, msg, peer_info)`
 
 Called on the leader device if any of the other peers calls
 `send_to_leader`. `msg` is the sent data and `peer_info` provides
@@ -229,7 +229,7 @@ at any time). The transport protocol guarantees at-most-once
 delivery though if the message rate does not exceed
 300 messages/second.
 
-## Method `group.send_to_leader(self, **message)`
+## Method `group.send_to_leader(**message)`
 
 This method send a message from any device to the current
 leader. It can be called on any device within the
