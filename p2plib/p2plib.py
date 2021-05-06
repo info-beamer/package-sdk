@@ -33,7 +33,7 @@
 
 VERSION = "1.0"
 
-import requests, threading, time, sys, traceback, socket, json, hmac, hashlib, struct, os
+import requests, threading, time, sys, traceback, socket, json, hmac, hashlib, struct, os, ctypes
 from Crypto import Random
 from Crypto.Cipher import AES
 from binascii import unhexlify, hexlify
@@ -56,6 +56,23 @@ def log(msg, name='p2plib.py'):
 
 PeerInfo = namedtuple('PeerInfo', 'ip device_id delta')
 
+CLOCK_MONOTONIC_RAW = 4 # see <linux/time.h>
+
+class timespec(ctypes.Structure):
+    _fields_ = [
+        ('tv_sec', ctypes.c_long),
+        ('tv_nsec', ctypes.c_long),
+    ]
+
+librt = ctypes.CDLL('librt.so.1')
+clock_gettime = librt.clock_gettime
+clock_gettime.argtypes = [ctypes.c_int, ctypes.POINTER(timespec)]
+
+def monotonic_time():
+    t = timespec()
+    clock_gettime(CLOCK_MONOTONIC_RAW , ctypes.pointer(t))
+    return t.tv_sec + t.tv_nsec * 1e-9
+
 class Peer(object):
     def __init__(self, ip):
         self._ip = ip
@@ -67,7 +84,8 @@ class Peer(object):
         self._discard_time_diff = 3
 
         # state to handle throwing away duplicate messages. The delivery
-        # guarantees at-most-once semantics.
+        # guarantees at-most-once semantics as long as no more than
+        # MAX_MESSAGE_PER_SEC messages are sent per second.
         self._last_cleanup = 0
         self._max_msg_ids = MAX_MESSAGE_PER_SEC * self._discard_time_diff
         self._msg_id_order = []
@@ -79,18 +97,19 @@ class Peer(object):
         self._delta = delta
         self._is_leader = is_leader
 
-    def add_seen_msg_id(self, msg_id, now):
+    def add_seen_msg_id(self, msg_id):
+        now = monotonic_time()
         if msg_id in self._msg_id_set:
+            log('discarding message: duplicate')
             return False
         if now > self._last_cleanup + 1 or len(self._msg_id_order) > self._max_msg_ids:
             self.cleanup_msg_ids(now)
             if len(self._msg_id_order) > self._max_msg_ids:
+                log('discarding message: in-queue overflow')
                 return False
         discard_threshold = now + self._discard_time_diff
-        if self._msg_id_order and discard_threshold < self._msg_id_order[-1][0]:
-            # Our clock went backwards
-            return False
-        # self._msg_id_order is sorted by discard_threshold
+        if self._msg_id_order:
+            assert discard_threshold >= self._msg_id_order[-1][0]
         self._msg_id_order.append((discard_threshold, msg_id))
         self._msg_id_set.add(msg_id)
         return True
@@ -123,7 +142,7 @@ class Peer(object):
     def peer_info(self):
         return PeerInfo(self._ip, self._device_id, self._delta)
 
-    def encode(self, data, direction):
+    def encode(self, data, direction, group_time):
         #
         # |     16      |     16      0   1           5                           x (%16=0)
         # |             |             | I | timestamp | {json message} ' <pad>  ' |
@@ -138,9 +157,10 @@ class Peer(object):
         # |      v      |                                                         |
         # |---- MAC ----|                                                         |
         # 
+        group_time = int(group_time)
         message = struct.pack("<BL", 
             direction << 7 | self._version, # info_bytes
-            time.time()
+            min(0xFFFFFFFF, int(group_time)),
         )
         message += json.dumps(
             data,
@@ -157,11 +177,7 @@ class Peer(object):
             hashlib.sha256
         ).digest()[:16] + encrypted
 
-    def decode(self, pkt, expected_direction):
-        now = time.time()
-        if now < 1000000000:
-            # Don't receive with wrong local time
-            return None
+    def decode(self, pkt, expected_direction, arrival_group_time):
         mac, encrypted = pkt[:16], pkt[16:]
         if len(mac) != 16:
             return None
@@ -179,19 +195,20 @@ class Peer(object):
         cipher = AES.new(self._pair_key, AES.MODE_CBC, msg_id)
         message = cipher.decrypt(ciphertext)
         hdr, data = message[:5], message[5:]
-        info_byte, remote_ts = struct.unpack("<BL", hdr)
+        info_byte, remote_group_time = struct.unpack("<BL", hdr)
+        local_group_time = min(0xFFFFFFFF, int(arrival_group_time))
         version = info_byte & 0x7f
         if version != self._version:
             return None
         direction = info_byte >> 7
         if direction != expected_direction:
             return None
-        # remote and our time too far off?
-        if now >= remote_ts + self._discard_time_diff:
-            return None
-        if remote_ts <= now - self._discard_time_diff:
-            return None
-        if not self.add_seen_msg_id(msg_id, now):
+        if local_group_time != 0xFFFFFFFF and remote_group_time != 0xFFFFFFFF:
+            # remote and our time too far off?
+            if abs(local_group_time - remote_group_time) > self._discard_time_diff:
+                log('discarding message: outside of expected receive group time')
+                return None
+        if not self.add_seen_msg_id(msg_id):
             return None
         try:
             return json.loads(data)
@@ -217,7 +234,7 @@ class PeerGroup(object):
             self._port = P2P_GROUP_BASE_PORT + metadata.get('node_idx', 0)
 
         # Every node on the device can calculate its own
-        # unicode node_scope value based on port, instance_id
+        # unique node_scope value based on port, instance_id
         # and current work directory. Multiple devices
         # with the same setup assigned will all calculate
         # the same value. This avoid reusing the same
@@ -247,6 +264,8 @@ class PeerGroup(object):
         self._me = None
         self._leader = None
         self._peers, self._peers_lock = {}, threading.Lock()
+
+        self._group_time_base = -monotonic_time()
 
         self.setup_peer()
 
@@ -326,7 +345,8 @@ class PeerGroup(object):
                     local_device = self._me
                 else:
                     pkt = peer.encode(message,
-                        direction = DIRECTION_LEADER_TO_PEER
+                        direction = DIRECTION_LEADER_TO_PEER,
+                        group_time = self._group_time,
                     )
                     self._sock.sendto(pkt, (ip, self._port))
         if local_device is not None:
@@ -339,13 +359,18 @@ class PeerGroup(object):
                 local_device = self._me
             else:
                 pkt = self._leader.encode(message,
-                    direction = DIRECTION_PEER_TO_LEADER
+                    direction = DIRECTION_PEER_TO_LEADER,
+                    group_time = self._group_time,
                 )
                 self._sock.sendto(pkt, (self._leader.ip, self._port))
         if local_device is not None:
             self.on_peer_message(json.loads(json.dumps(message)), local_device.peer_info)
 
     ##--------------------------------
+
+    @property
+    def _group_time(self):
+        return self._group_time_base + monotonic_time()
 
     def _listen_thread(self):
         while 1:
@@ -361,31 +386,36 @@ class PeerGroup(object):
                     if peer.is_leader and self._role == ROLE_FOLLOWER:
                         receiver = self.on_leader_message
                         message = peer.decode(pkt,
-                            expected_direction = DIRECTION_LEADER_TO_PEER
+                            expected_direction = DIRECTION_LEADER_TO_PEER,
+                            arrival_group_time = self._group_time,
                         )
                     elif not peer.is_leader and self._role == ROLE_LEADER:
                         receiver = self.on_peer_message
                         message = peer.decode(pkt,
-                            expected_direction = DIRECTION_PEER_TO_LEADER
+                            expected_direction = DIRECTION_PEER_TO_LEADER,
+                            arrival_group_time = self._group_time,
                         )
                     else:
                         continue
-                receiver(message, peer.peer_info)
+                if message is not None:
+                    receiver(message, peer.peer_info)
             except Exception as err:
                 traceback.print_exc()
 
     def _update_thread(self):
         while 1:
             try:
-                r = requests.get(
+                setup = requests.get(
                     'http://127.0.0.1:81/api/v1/peers/setup', timeout=0.5
-                )
-                peers = r.json()['peers']
+                ).json()
+                peers, group_time = setup['peers'], setup['group_time']
                 if not peers:
                     # If P2P is disabled or P2P traffic completely blocked
                     # for some reason, use a fallback list to make this
                     # device its own leader.
                     peers = self._no_p2p_fallback
+                self._group_time_base = group_time - monotonic_time()
+                # log('group time base: %f' % (self._group_time_base,))
                 self._update_peers(peers)
             except Exception as err:
                 log('cannot update setup peers: %s' % err)
