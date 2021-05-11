@@ -54,7 +54,7 @@ MAX_MESSAGE_PER_SEC = 300
 def log(msg, name='p2plib.py'):
     print >>sys.stderr, "[{}] {}".format(name, msg)
 
-PeerInfo = namedtuple('PeerInfo', 'ip device_id delta')
+PeerInfo = namedtuple('PeerInfo', 'ip device_id delta ping')
 
 CLOCK_MONOTONIC_RAW = 4 # see <linux/time.h>
 
@@ -91,10 +91,11 @@ class Peer(object):
         self._msg_id_order = []
         self._msg_id_set = set()
 
-    def update(self, device_id, pair_key, delta, is_leader):
+    def update(self, device_id, pair_key, delta, ping, is_leader):
         self._device_id = device_id
         self._pair_key = pair_key
         self._delta = delta
+        self._ping = ping
         self._is_leader = is_leader
 
     def add_seen_msg_id(self, msg_id):
@@ -140,7 +141,7 @@ class Peer(object):
 
     @property
     def peer_info(self):
-        return PeerInfo(self._ip, self._device_id, self._delta)
+        return PeerInfo(self._ip, self._device_id, self._delta, self._ping)
 
     def encode(self, data, direction, group_time):
         #
@@ -250,6 +251,7 @@ class PeerGroup(object):
             device_id = metadata['device_id'],
             pair_key = '0' * 16,
             delta = 0,
+            ping = 0,
             ip = '127.0.0.1',
         )]
 
@@ -348,7 +350,10 @@ class PeerGroup(object):
                         direction = DIRECTION_LEADER_TO_PEER,
                         group_time = self._group_time,
                     )
-                    self._sock.sendto(pkt, (ip, self._port))
+                    try:
+                        self._sock.sendto(pkt, (ip, self._port))
+                    except socket.error:
+                        pass
         if local_device is not None:
             self.on_leader_message(json.loads(json.dumps(message)), local_device.peer_info)
 
@@ -430,6 +435,7 @@ class PeerGroup(object):
             for idx, peer_info in enumerate(peers):
                 device_id = peer_info['device_id']
                 delta = peer_info['delta']
+                ping = peer_info['ping']
                 ip = peer_info['ip']
                 pair_key = hmac.HMAC(
                     unhexlify(peer_info['pair_key']),
@@ -442,7 +448,7 @@ class PeerGroup(object):
                 if is_added:
                     log('added peer %s' % ip)
                     peer = self._peers[ip] = Peer(ip)
-                peer.update(device_id, pair_key, delta, idx == 0)
+                peer.update(device_id, pair_key, delta, ping, idx == 0)
                 if is_added:
                     added.add(peer.peer_info)
 
