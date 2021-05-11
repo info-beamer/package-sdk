@@ -1,12 +1,15 @@
-# Peer-to-Peer (P2P) support library
+# Peer-to-Peer (P2P) support helpers
 
-This library allows easy collaboration of [package services](https://info-beamer.com/doc/package-services)
+The `p2plib.py` library allows easy collaboration of [package services](https://info-beamer.com/doc/package-services)
 running on multiple co-located devices. It uses the [Peer-to-Peer feature](https://info-beamer.com/doc/device-configuration#p2p)
 for device detection, automatic leader selection and secure communication setup. 
 
+The `p2pevt.py` library adds timed event distribution to a group of devices as well as a group RCP mechanism
+(with help of [../rpc.lua](rpc.lua)) on top of that.
+
 It requires info-beamer OS with a version later than '202104xx'.
 
-## Introduction
+## Introduction to p2plib.py
 
 The library can be used to synchronize content playback or other state across multiple devices running the
 same setup. Examples might be:
@@ -37,7 +40,7 @@ have a correct time at all.
 A network split might result in multiple leaders. Usually detection of new or disappeared peers happens
 within 5-10 seconds and results in a newly selected leader.
 
-## Example Code
+## Example Code for p2plib.py
 
 ```python
 #!/usr/bin/python
@@ -256,8 +259,67 @@ It defines three properties:
 
  * `ip` is the IP address of the peer. This is always '127.0.0.1' for this device.
  * `device_id` is the device id of the device.
- * `delta` is a timing delta and provides an estimated time offset to the local device in seconds.
+ * `delta` is a wall clock time delta and provides an estimated time offset to the local device's clock in seconds.
+ * `ping` is the calculated network latency when sending data to this peer.
 
 If you need to keep a mapping from `peer_info` to your own data, use the
 `ip` value as key, as it's the only value guaranteed to be unique across
 different peers.
+
+## Example Code for p2pevt.py
+
+A package service can use the library to send RPC to all devices running
+the same setup in the local network like this. The first parameter for
+the `call` methods is a time offset on when those calls will be forwarded
+to the Lua code in all peers.
+
+A simple synchronized image playback looks like this:
+
+```python
+#!/usr/bin/python
+import time
+from itertools import cycle
+from p2pevt import GroupRPC
+
+if __name__ == "__main__":
+    group = GroupRPC()
+    for image in cycle(['1.jpg', '2.jpg']):
+        group.call(0.2, 'load', image)
+        group.call(0.4, 'switch')
+        time.sleep(5)
+```
+
+The corresponding `node.lua` code:
+
+```lua
+gl.setup(NATIVE_WIDTH, NATIVE_HEIGHT)
+util.no_globals()
+
+local rpc = require "rpc"
+local py = rpc.create()
+
+local img, next_img
+
+py.register("load", function(filename)
+    if next_img then
+        next_img:dispose()
+    end
+    next_img = resource.load_image(filename)
+end)
+
+py.register("switch", function()
+    local old = img
+    img = next_img
+    next_img = nil
+    if old then
+        old:dispose()
+    end
+end)
+
+function node.render()
+    gl.clear(0,0,0,1)
+    if img then
+        img:draw(0, 0, WIDTH, HEIGHT)
+    end
+end
+```
