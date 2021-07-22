@@ -232,7 +232,7 @@ class PeerGroup(object):
         if port is not None:
             self._port = port
         else:
-            self._port = P2P_GROUP_BASE_PORT + metadata.get('node_idx', 0)
+            self._port = P2P_GROUP_BASE_PORT + metadata['node_idx']
 
         # Every node on the device can calculate its own
         # unique node_scope value based on port, instance_id
