@@ -329,6 +329,10 @@ class PeerGroup(object):
             return len(self._peers)
 
     @property
+    def leader(self):
+        return self._leader
+
+    @property
     def peers(self):
         peers = []
         with self._peers_lock:
