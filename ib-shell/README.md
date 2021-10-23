@@ -6,9 +6,10 @@ on your devices. And you can connect to them from anywhere.
 On Ubuntu you might have to install the package `python-websocket`
 and `python-requests`.
 
-Then just set the environment variable `API_KEY` to your 
+Optionally set the environment variable `API_KEY` to your
 [info-beamer hosted API key](https://info-beamer.com/account) and start
-the `ib-shell` command like this:
+the `ib-shell` command like this. If you do not specify `API_KEY` and
+OAuth flow will be used and a refresh token is saved in `~/.ib-shell.token`:
 
 ```
 $ ib-shell $device_id
