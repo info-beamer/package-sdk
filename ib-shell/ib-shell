@@ -15,7 +15,7 @@ import requests # needs apt-get install python-requests on ubuntu
 class ConnectionError(Exception):
     pass
 
-def connect(api_key, device_id, mode):
+def connect(api_key, device_id, mode, invalidate_api_key):
     r = requests.get(
         url = 'https://info-beamer.com/api/v1/device/%d' % device_id,
         auth = ('', api_key),
@@ -102,6 +102,12 @@ def connect(api_key, device_id, mode):
             break
     forwarding = False
     stdin_sender.join()
+    ws.close()
+    if invalidate_api_key:
+        r = requests.get(
+            url = 'https://info-beamer.com/api/v1/session/destroy',
+            auth = ('', api_key),
+        )
     print("Session exited")
 
 class OAuth(object):
@@ -146,11 +152,12 @@ class OAuth(object):
             code_challenge = code_challenge,
             code_challenge_method = 'S256',
         )))
-        if input("Open a browser to start the OAuth authorization? [Y/n] > ") not in ("y", ""):
-            raise Exception("OAuth declined")
-        print("Opening browser for %s\n" % (redirect_target,))
-        webbrowser.open(redirect_target)
-        code = input("Using the opened browser, grant access to ib-shell, then paste the auth code here: > ").strip()
+        if input("Open a browser for you to start the OAuth authorization? [y/N] > ") == "y":
+            webbrowser.open(redirect_target)
+            code = input("Using the opened browser, grant access to ib-shell, then paste the auth code here: > ").strip()
+        else:
+            print("Please manually open a browser and visit\n\n  %s\n" % (redirect_target,))
+            code = input("Grant access to ib-shell, then paste the auth code here: > ").strip()
         r = requests.post(self._token_url, data=dict(
             grant_type = 'authorization_code',
             code = code,
@@ -195,6 +202,7 @@ if __name__ == "__main__":
     group.add_argument("--root", dest='mode', action='store_const', const='root', help='request full root access')
     group.add_argument("--viewer", dest='mode', action='store_const', const='viewer', help="request limited access (default)")
     args = parser.parse_args()
+    invalidate_api_key = False
     api_key = os.getenv('API_KEY')
     if api_key is not None:
         print("Using api key from API_KEY environment variable")
@@ -206,8 +214,9 @@ if __name__ == "__main__":
                 state_file = os.path.join(os.path.expanduser("~"), ".ib-shell.token"),
             )
             api_key = oauth.fetch_access_token()
+            invalidate_api_key = True
         except Exception as err:
             print("Cannot fetch access token: %s" % (err,))
             sys.exit(1)
 
-    connect(api_key, args.device_id, args.mode or 'viewer')
+    connect(api_key, args.device_id, args.mode or 'viewer', invalidate_api_key)
