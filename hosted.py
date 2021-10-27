@@ -96,6 +96,10 @@ def init_types():
         return value
 
     @type
+    def device_token(value):
+        return value
+
+    @type
     def json(value):
         return value
 
