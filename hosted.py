@@ -860,6 +860,9 @@ class HostedAPI(object):
         self._expire = 0
         self._base_url = None
         self._session = requests.Session()
+        self._session.headers.update({
+            'User-Agent': 'hosted.py version/%s - on-device' % (VERSION,)
+        })
 
     def use_api_key(self):
         with self._lock:
