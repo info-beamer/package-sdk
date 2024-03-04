@@ -422,6 +422,11 @@ class Configuration(object):
     def metadata(self):
         return self._config['__metadata']
 
+    @property
+    def metadata_timezone(self):
+        import pytz
+        return pytz.timezone(self.metadata['timezone'])
+
     def __getitem__(self, key):
         return self._parsed[key]
 
