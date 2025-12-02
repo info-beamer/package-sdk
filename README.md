@@ -82,7 +82,7 @@ You can then access the configuration in the global
 `CONFIG` value:
 
 ```lua
-print(CONIFG.timezone)
+print(CONFIG.timezone)
 ```
 
 ## hosted.js
